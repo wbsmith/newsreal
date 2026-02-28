@@ -1,0 +1,38 @@
+'use client';
+
+import { Story } from '@/types';
+import BiasTag from './BiasTag';
+import ManipulationMeter from './ManipulationMeter';
+import RedactedText from './RedactedText';
+
+interface StoryCardProps {
+  story: Story;
+  onClick: (story: Story) => void;
+}
+
+export default function StoryCard({ story, onClick }: StoryCardProps) {
+  return (
+    <article
+      className={`story-card ${story.featured ? 'featured' : ''}`}
+      onClick={() => onClick(story)}
+    >
+      <div>
+        <div className="story-meta">
+          <span className="story-source">{story.source}</span>
+          <span className="story-time">{story.time}</span>
+          <BiasTag tag={story.biasTag} />
+        </div>
+        <h3 className="story-headline">{story.headline}</h3>
+        <p className="story-summary">{story.summary}</p>
+        <ManipulationMeter score={story.manipulationScore} />
+      </div>
+      {story.featured && (
+        <div className="story-real">
+          <p>
+            <RedactedText text={story.realAnalysis} />
+          </p>
+        </div>
+      )}
+    </article>
+  );
+}

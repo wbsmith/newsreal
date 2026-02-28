@@ -1,30 +1,54 @@
-import { Redis } from '@upstash/redis';
+import { getDynamoDB, TABLES } from './db';
+import { PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 
-let redis: Redis | null = null;
-
-export function getRedis(): Redis | null {
-  if (redis) return redis;
-
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-
-  if (!url || !token) {
-    console.warn('Upstash Redis not configured — caching disabled');
-    return null;
-  }
-
-  redis = new Redis({ url, token });
-  return redis;
-}
+/**
+ * DynamoDB-based cache with TTL.
+ * Uses a dedicated cache table with automatic expiry via DynamoDB TTL.
+ */
 
 export async function getCached<T>(key: string): Promise<T | null> {
-  const client = getRedis();
-  if (!client) return null;
-  return client.get<T>(key);
+  const db = getDynamoDB();
+  if (!db) return null;
+
+  try {
+    const result = await db.send(
+      new GetCommand({
+        TableName: TABLES.cache,
+        Key: { cacheKey: key },
+      })
+    );
+
+    if (!result.Item) return null;
+
+    // Check if expired (DynamoDB TTL is eventually consistent, so double-check)
+    const now = Math.floor(Date.now() / 1000);
+    if (result.Item.ttl && result.Item.ttl < now) return null;
+
+    return result.Item.value as T;
+  } catch {
+    return null;
+  }
 }
 
-export async function setCached<T>(key: string, value: T, ttlSeconds = 21600): Promise<void> {
-  const client = getRedis();
-  if (!client) return;
-  await client.set(key, value, { ex: ttlSeconds });
+export async function setCached<T>(
+  key: string,
+  value: T,
+  ttlSeconds = 21600 // 6 hours default
+): Promise<void> {
+  const db = getDynamoDB();
+  if (!db) return;
+
+  const now = Math.floor(Date.now() / 1000);
+
+  await db.send(
+    new PutCommand({
+      TableName: TABLES.cache,
+      Item: {
+        cacheKey: key,
+        value,
+        ttl: now + ttlSeconds,
+        createdAt: new Date().toISOString(),
+      },
+    })
+  );
 }

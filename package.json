@@ -10,8 +10,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
-    "@supabase/supabase-js": "^2.98.0",
-    "@upstash/redis": "^1.36.3",
+    "@aws-sdk/client-dynamodb": "^3.1000.0",
+    "@aws-sdk/lib-dynamodb": "^3.1000.0",
     "cheerio": "^1.2.0",
     "date-fns": "^4.1.0",
     "fuzzball": "^2.2.3",

@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 120" width="480" height="120">
+  <defs>
+    <!-- Subtle glow filter for the eye -->
+    <filter id="redGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.6 0" result="redBlur"/>
+      <feMerge>
+        <feMergeNode in="redBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Noise texture -->
+    <filter id="noise">
+      <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" stitchTiles="stitch"/>
+      <feColorMatrix type="saturate" values="0"/>
+      <feBlend in="SourceGraphic" mode="multiply" result="noisy"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.08"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode in="SourceGraphic"/>
+        <feMergeNode/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background (transparent by default, this rect is optional for preview) -->
+
+  <!-- "News" in off-white -->
+  <text x="18" y="82" font-family="Georgia, 'Times New Roman', serif" font-size="72" font-weight="bold" fill="#e8e6e1" letter-spacing="-2">News</text>
+
+  <!-- "Real" in deep red -->
+  <text x="213" y="82" font-family="Georgia, 'Times New Roman', serif" font-size="72" font-weight="bold" fill="#c62828" letter-spacing="-2">Real</text>
+
+  <!-- ".ai" in muted gray italic -->
+  <text x="370" y="82" font-family="Georgia, 'Times New Roman', serif" font-size="44" font-style="italic" fill="#55535a">.ai</text>
+
+  <!-- The Eye Icon — integrated into the wordmark -->
+  <!-- Sits between "News" and "Real" as a subtle separator -->
+  <g transform="translate(198, 48)" filter="url(#redGlow)">
+    <!-- Outer eye shape -->
+    <path d="M-14,0 Q0,-14 14,0 Q0,14 -14,0 Z" fill="none" stroke="#c62828" stroke-width="1.8"/>
+    <!-- Iris -->
+    <circle cx="0" cy="0" r="5" fill="none" stroke="#c62828" stroke-width="1.5"/>
+    <!-- Pupil -->
+    <circle cx="0" cy="0" r="2" fill="#c62828"/>
+    <!-- Glint -->
+    <circle cx="1.5" cy="-1.5" r="0.8" fill="#ff1744" opacity="0.9"/>
+  </g>
+
+  <!-- Tagline -->
+  <text x="20" y="108" font-family="'Courier New', Courier, monospace" font-size="10" fill="#8b6914" letter-spacing="4" text-transform="uppercase">THE STORY BEHIND THE STORY</text>
+
+  <!-- Subtle red underline accent -->
+  <line x1="18" y1="89" x2="410" y2="89" stroke="#c62828" stroke-width="0.5" opacity="0.3"/>
+</svg>

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Image from 'next/image';
 import { Story } from '@/types';
 import {
   MOCK_STORIES,
@@ -57,6 +58,14 @@ export default function Home() {
         <DisclaimerBanner />
         <main className="main-content">
           <div className="loading-screen">
+            <Image
+              src="/icon.svg"
+              alt=""
+              width={80}
+              height={80}
+              priority
+              style={{ opacity: 0.8 }}
+            />
             <div className="glitch-text">INTERCEPTING SIGNALS...</div>
             <div className="loading-bar">
               <div className="loading-bar-fill" />

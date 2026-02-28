@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.5 0" result="redBlur"/>
+      <feMerge>
+        <feMergeNode in="redBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="innerGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.8 0"/>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Radial gradient for the iris -->
+    <radialGradient id="irisGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff1744"/>
+      <stop offset="40%" stop-color="#c62828"/>
+      <stop offset="100%" stop-color="#7f1616"/>
+    </radialGradient>
+    <!-- Dark radial for background depth -->
+    <radialGradient id="bgGrad" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#151518"/>
+      <stop offset="100%" stop-color="#0a0a0c"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="256" fill="url(#bgGrad)"/>
+
+  <!-- Outer border ring -->
+  <circle cx="256" cy="256" r="248" fill="none" stroke="#222230" stroke-width="1.5"/>
+  <circle cx="256" cy="256" r="238" fill="none" stroke="#222230" stroke-width="0.5"/>
+
+  <!-- Corner tick marks (compass/crosshair feel) -->
+  <g stroke="#55535a" stroke-width="1.5" opacity="0.5">
+    <line x1="256" y1="20" x2="256" y2="44"/>
+    <line x1="256" y1="468" x2="256" y2="492"/>
+    <line x1="20" y1="256" x2="44" y2="256"/>
+    <line x1="468" y1="256" x2="492" y2="256"/>
+  </g>
+
+  <!-- Small tick marks -->
+  <g stroke="#55535a" stroke-width="0.8" opacity="0.3">
+    <line x1="256" y1="28" x2="256" y2="36"/>
+    <line x1="256" y1="476" x2="256" y2="484"/>
+    <line x1="28" y1="256" x2="36" y2="256"/>
+    <line x1="476" y1="256" x2="484" y2="256"/>
+    <!-- Diagonal ticks -->
+    <line x1="88" y1="88" x2="94" y2="94"/>
+    <line x1="418" y1="88" x2="424" y2="94"/>
+    <line x1="88" y1="418" x2="94" y2="424"/>
+    <line x1="418" y1="418" x2="424" y2="424"/>
+  </g>
+
+  <!-- THE EYE — main symbol -->
+  <g filter="url(#glow)">
+    <!-- Outer eye shape (almond) -->
+    <path d="M76,256 Q256,126 436,256 Q256,386 76,256 Z"
+          fill="none" stroke="#c62828" stroke-width="4" stroke-linejoin="round"/>
+
+    <!-- Inner eye contour -->
+    <path d="M110,256 Q256,156 402,256 Q256,356 110,256 Z"
+          fill="none" stroke="#c62828" stroke-width="1.5" opacity="0.3"/>
+
+    <!-- Iris outer ring -->
+    <circle cx="256" cy="256" r="72" fill="none" stroke="#c62828" stroke-width="3"/>
+
+    <!-- Iris fill with gradient -->
+    <circle cx="256" cy="256" r="70" fill="url(#irisGrad)" opacity="0.15"/>
+
+    <!-- Iris detail rings -->
+    <circle cx="256" cy="256" r="58" fill="none" stroke="#c62828" stroke-width="0.8" opacity="0.4"/>
+    <circle cx="256" cy="256" r="45" fill="none" stroke="#c62828" stroke-width="0.5" opacity="0.3"/>
+
+    <!-- Pupil -->
+    <circle cx="256" cy="256" r="28" fill="#c62828"/>
+    <circle cx="256" cy="256" r="28" fill="#0a0a0c" opacity="0.6"/>
+
+    <!-- NR monogram inside the pupil -->
+    <g filter="url(#innerGlow)">
+      <text x="256" y="264" text-anchor="middle" font-family="Georgia, 'Times New Roman', serif"
+            font-size="26" font-weight="bold" fill="#c62828" letter-spacing="1">NR</text>
+    </g>
+
+    <!-- Glint / reflection -->
+    <circle cx="276" cy="232" r="8" fill="#ff1744" opacity="0.35"/>
+    <circle cx="280" cy="228" r="3" fill="#ffffff" opacity="0.5"/>
+
+    <!-- Secondary glint -->
+    <circle cx="238" cy="272" r="4" fill="#ff1744" opacity="0.15"/>
+  </g>
+
+  <!-- Eyelash / ray details at top and bottom of eye -->
+  <g stroke="#c62828" stroke-width="1.2" opacity="0.25">
+    <!-- Top rays -->
+    <line x1="180" y1="192" x2="170" y2="168"/>
+    <line x1="220" y1="174" x2="214" y2="148"/>
+    <line x1="256" y1="166" x2="256" y2="140"/>
+    <line x1="292" y1="174" x2="298" y2="148"/>
+    <line x1="332" y1="192" x2="342" y2="168"/>
+    <!-- Bottom rays -->
+    <line x1="180" y1="320" x2="170" y2="344"/>
+    <line x1="220" y1="338" x2="214" y2="364"/>
+    <line x1="256" y1="346" x2="256" y2="372"/>
+    <line x1="292" y1="338" x2="298" y2="364"/>
+    <line x1="332" y1="320" x2="342" y2="344"/>
+  </g>
+
+  <!-- Subtle data/scan lines through the eye -->
+  <g stroke="#c62828" stroke-width="0.3" opacity="0.12">
+    <line x1="76" y1="240" x2="436" y2="240"/>
+    <line x1="76" y1="256" x2="436" y2="256"/>
+    <line x1="76" y1="272" x2="436" y2="272"/>
+  </g>
+
+  <!-- Bottom arc text area -->
+  <text x="256" y="460" text-anchor="middle" font-family="'Courier New', Courier, monospace"
+        font-size="14" fill="#8b6914" letter-spacing="6" opacity="0.6">NEWSREAL.AI</text>
+</svg>

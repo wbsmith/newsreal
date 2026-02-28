@@ -12,6 +12,10 @@ export const metadata: Metadata = {
     "narrative analysis",
     "media literacy",
   ],
+  icons: {
+    icon: "/favicon.svg",
+    apple: "/icon.svg",
+  },
   openGraph: {
     title: "NewsReal.ai \u2014 The Story Behind the Story",
     description:

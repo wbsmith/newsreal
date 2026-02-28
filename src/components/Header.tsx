@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import CategoryNav from './CategoryNav';
 
 interface HeaderProps {
@@ -32,12 +33,14 @@ export default function Header({ activeFilter, onFilterChange }: HeaderProps) {
         </div>
       </div>
       <div className="header-main">
-        <div className="logo">
-          <span className="news">News</span>
-          <span className="real">Real</span>
-          <span className="dot-ai">.ai</span>
-        </div>
-        <div className="tagline">The Story Behind the Story</div>
+        <Image
+          src="/logo-compact.svg"
+          alt="NewsReal.ai"
+          width={360}
+          height={64}
+          priority
+          style={{ margin: '0 auto' }}
+        />
       </div>
       <CategoryNav activeFilter={activeFilter} onFilterChange={onFilterChange} />
     </header>

@@ -1,29 +1,32 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, forwardRef, useImperativeHandle } from 'react';
 import { Narrative, NarrativeAnalysis } from '@/types';
 import NarrativeAnalysisModal from './NarrativeAnalysisModal';
+
+export interface NarrativeTrackerHandle {
+  analyzeNarrative: (slug: string) => void;
+}
 
 interface NarrativeTrackerProps {
   narratives: Narrative[];
 }
 
-export default function NarrativeTracker({ narratives }: NarrativeTrackerProps) {
+const NarrativeTracker = forwardRef<NarrativeTrackerHandle, NarrativeTrackerProps>(
+  function NarrativeTracker({ narratives }, ref) {
   const [analysis, setAnalysis] = useState<NarrativeAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeSlug, setActiveSlug] = useState<string | null>(null);
 
-  async function handleNarrativeClick(narrative: Narrative) {
-    if (!narrative.slug) return;
-
-    setActiveSlug(narrative.slug);
+  async function fetchNarrativeAnalysis(slug: string) {
+    setActiveSlug(slug);
     setLoading(true);
     setError(null);
     setAnalysis(null);
 
     try {
-      const res = await fetch(`/api/narrative?slug=${encodeURIComponent(narrative.slug)}`);
+      const res = await fetch(`/api/narrative?slug=${encodeURIComponent(slug)}`);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || `Analysis failed (${res.status})`);
@@ -36,6 +39,22 @@ export default function NarrativeTracker({ narratives }: NarrativeTrackerProps) 
       setLoading(false);
     }
   }
+
+  function handleNarrativeClick(narrative: Narrative) {
+    if (!narrative.slug) return;
+    fetchNarrativeAnalysis(narrative.slug);
+  }
+
+  useImperativeHandle(ref, () => ({
+    analyzeNarrative(slug: string) {
+      const narrative = narratives.find((n) => n.slug === slug);
+      if (narrative) {
+        handleNarrativeClick(narrative);
+      } else {
+        fetchNarrativeAnalysis(slug);
+      }
+    },
+  }));
 
   function handleClose() {
     setAnalysis(null);
@@ -51,7 +70,11 @@ export default function NarrativeTracker({ narratives }: NarrativeTrackerProps) 
         <h3>Dominant Narratives</h3>
       </div>
       <div className="panel-body">
-        {narratives.map((n, i) => (
+        {narratives.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-message">SCANNING TRANSMISSION PATTERNS...</div>
+          </div>
+        ) : narratives.map((n, i) => (
           <div
             key={i}
             className={`narrative-item narrative-item-clickable ${activeSlug === n.slug ? 'narrative-item-active' : ''}`}
@@ -92,4 +115,6 @@ export default function NarrativeTracker({ narratives }: NarrativeTrackerProps) 
       />
     </div>
   );
-}
+});
+
+export default NarrativeTracker;

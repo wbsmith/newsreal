@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import { getCached } from '@/lib/cache';
+import { getStory, putStory } from '@/lib/db';
 import { Story } from '@/types';
 import StoryDetailClient from './StoryDetailClient';
 
@@ -10,15 +11,27 @@ interface StoryPageProps {
 }
 
 async function findStory(slug: string): Promise<Story | undefined> {
-  // Try cache first
+  // 1. Try homepage cache first
   try {
     const cached = await getCached<Story[]>('homepage-stories');
     if (cached) {
       const found = cached.find((s) => s.slug === slug);
-      if (found) return found;
+      if (found) {
+        // Cache-on-read: persist to DynamoDB so it survives TTL expiration
+        putStory({ ...found, id: found.slug }).catch(() => {});
+        return found;
+      }
     }
   } catch {
-    // Cache miss — story not found
+    // Cache miss
+  }
+
+  // 2. Fall back to DynamoDB stories table
+  try {
+    const item = await getStory(slug);
+    if (item) return item as unknown as Story;
+  } catch {
+    // DynamoDB miss
   }
 
   return undefined;

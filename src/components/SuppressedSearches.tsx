@@ -49,7 +49,11 @@ export default function SuppressedSearches({ searches }: SuppressedSearchesProps
         <h3>Suppressed Searches</h3>
       </div>
       <div className="panel-body">
-        {searches.map((s, i) => (
+        {searches.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-message">CALIBRATING SEARCH VECTORS...</div>
+          </div>
+        ) : searches.map((s, i) => (
           <div
             key={i}
             className={`search-item ${activeQuery === s ? 'search-item-active' : ''}`}

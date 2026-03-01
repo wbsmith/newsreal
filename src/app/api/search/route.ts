@@ -77,8 +77,8 @@ export async function GET(request: NextRequest) {
     searchResults: topResults,
   };
 
-  // 6. Cache for 6 hours
-  await setCached(cacheKey, analysis);
+  // 6. Cache for 24 hours (on-demand analysis tied to specific queries)
+  await setCached(cacheKey, analysis, 86400);
 
   return NextResponse.json(analysis);
 }

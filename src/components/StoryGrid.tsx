@@ -16,11 +16,18 @@ export default function StoryGrid({ stories, onStoryClick }: StoryGridProps) {
         <div className="line" />
         <div className="count">{stories.length} STORIES DECODED</div>
       </div>
-      <div className="stories-grid">
-        {stories.map((story) => (
-          <StoryCard key={story.id} story={story} onClick={onStoryClick} />
-        ))}
-      </div>
+      {stories.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-state-message">AWAITING SIGNAL INTERCEPT...</div>
+          <div className="empty-state-sub">Pipeline initializing. Stories will appear after the next ingestion cycle.</div>
+        </div>
+      ) : (
+        <div className="stories-grid">
+          {stories.map((story) => (
+            <StoryCard key={story.id} story={story} onClick={onStoryClick} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

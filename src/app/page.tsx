@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Story, Narrative, Obfuscation, TickerItem } from '@/types';
@@ -10,13 +10,14 @@ import DisclaimerBanner from '@/components/DisclaimerBanner';
 import Ticker from '@/components/Ticker';
 import StoryGrid from '@/components/StoryGrid';
 import StoryModal from '@/components/StoryModal';
-import NarrativeTracker from '@/components/NarrativeTracker';
+import NarrativeTracker, { NarrativeTrackerHandle } from '@/components/NarrativeTracker';
 import ObfuscationIndex from '@/components/ObfuscationIndex';
 import SuppressedSearches from '@/components/SuppressedSearches';
 import Footer from '@/components/Footer';
 
 export default function Home() {
   const router = useRouter();
+  const narrativeRef = useRef<NarrativeTrackerHandle>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMsg, setLoadingMsg] = useState(LOADING_MESSAGES[0]);
   const [activeFilter, setActiveFilter] = useState('all');
@@ -67,11 +68,7 @@ export default function Home() {
       if (item.linkType === 'story' && item.linkRef) {
         router.push(`/story/${item.linkRef}`);
       } else if (item.linkType === 'narrative' && item.linkRef) {
-        // Scroll to sidebar narratives panel
-        const sidebar = document.querySelector('.sidebar');
-        if (sidebar) {
-          sidebar.scrollIntoView({ behavior: 'smooth' });
-        }
+        narrativeRef.current?.analyzeNarrative(item.linkRef);
       }
     },
     [router]
@@ -113,7 +110,9 @@ export default function Home() {
       <Header activeFilter={activeFilter} onFilterChange={setActiveFilter} />
       <DisclaimerBanner />
       <main className="main-content">
-        <Ticker items={tickerItems} onItemClick={handleTickerClick} />
+        {tickerItems.length > 0 && (
+          <Ticker items={tickerItems} onItemClick={handleTickerClick} />
+        )}
         <div className="content-layout">
           <div className="stories-column">
             <StoryGrid
@@ -122,7 +121,7 @@ export default function Home() {
             />
           </div>
           <aside className="sidebar">
-            <NarrativeTracker narratives={narratives} />
+            <NarrativeTracker ref={narrativeRef} narratives={narratives} />
             <ObfuscationIndex obfuscations={obfuscations} />
             <SuppressedSearches searches={suppressedSearches} />
           </aside>

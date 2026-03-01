@@ -12,7 +12,11 @@ export default function ObfuscationIndex({ obfuscations }: ObfuscationIndexProps
         <h3>Obfuscation Index</h3>
       </div>
       <div className="panel-body">
-        {obfuscations.map((o, i) => (
+        {obfuscations.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-message">MONITORING FEDERAL REGISTER...</div>
+          </div>
+        ) : obfuscations.map((o, i) => (
           <div key={i} className="obfuscation-item">
             <div className="obfuscation-what">{'\u26A0'} {o.category}</div>
             <div className="obfuscation-why">{o.whyItMatters}</div>

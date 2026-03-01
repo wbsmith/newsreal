@@ -6,6 +6,8 @@ interface TickerProps {
 }
 
 export default function Ticker({ items, onItemClick }: TickerProps) {
+  if (items.length === 0) return null;
+
   // Double items for infinite scroll illusion
   const doubled = [...items, ...items];
 

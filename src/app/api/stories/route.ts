@@ -14,15 +14,24 @@ export async function GET(request: Request) {
   let suppressedSearches: string[] | null = null;
   let source: 'live' | 'db' = 'db';
 
-  // Try 1: DynamoDB cache (fast single GetItem)
+  // Try 1: DynamoDB cache — all reads in parallel to stay within Amplify timeout
   try {
-    stories = await getCached<Story[]>('homepage-stories');
-    if (stories && stories.length > 0) {
+    const [cachedStories, cachedNarratives, cachedObfuscations, cachedTicker, cachedSuppressed] =
+      await Promise.all([
+        getCached<Story[]>('homepage-stories'),
+        getCached<Narrative[]>('homepage-narratives'),
+        getCached<Obfuscation[]>('homepage-obfuscations'),
+        getCached<TickerItem[]>('homepage-ticker'),
+        getCached<string[]>('homepage-suppressed'),
+      ]);
+
+    if (cachedStories && cachedStories.length > 0) {
+      stories = cachedStories;
+      narratives = cachedNarratives;
+      obfuscations = cachedObfuscations;
+      tickerItems = cachedTicker;
+      suppressedSearches = cachedSuppressed;
       source = 'live';
-      narratives = await getCached<Narrative[]>('homepage-narratives');
-      obfuscations = await getCached<Obfuscation[]>('homepage-obfuscations');
-      tickerItems = await getCached<TickerItem[]>('homepage-ticker');
-      suppressedSearches = await getCached<string[]>('homepage-suppressed');
     }
   } catch {
     // Cache miss or error — continue to fallback

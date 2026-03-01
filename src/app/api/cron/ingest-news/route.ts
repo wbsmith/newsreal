@@ -24,7 +24,8 @@ export const maxDuration = 300;
 const CACHE_TTL = 21600; // 6 hours
 const CLASSIFY_BATCH_SIZE = 10; // Max concurrent Haiku calls
 const ANALYZE_BATCH_SIZE = 5; // Max concurrent Sonnet calls
-const MAX_STORIES_TO_CACHE = 30; // Keep cache under DynamoDB 400KB limit
+const DEEP_ANALYZE_COUNT = 50; // Top N stories get Sonnet deep-dive
+const MAX_STORIES_TO_CACHE = 50; // Keep cache under DynamoDB 400KB limit
 
 // Run tasks in batches to avoid rate limits
 async function batchProcess<T, R>(
@@ -112,8 +113,8 @@ export async function GET(request: Request) {
     // ─── Step 2: Deduplicate across all sources ───
     const { unique, duplicates } = deduplicateStories(allItems);
 
-    // Limit to top 50 most recent for classification (saves API cost)
-    const toClassify = unique.slice(0, 50);
+    // Classify top 75 most recent (cheap Haiku calls, gives enough pool for 50 deep dives)
+    const toClassify = unique.slice(0, 75);
 
     // ─── Step 3: Classify stories with Haiku in batches ───
     const classificationResults = await batchProcess(
@@ -157,10 +158,10 @@ export async function GET(request: Request) {
       });
     }
 
-    // ─── Step 4: Deep-analyze top 10 with Sonnet in batches ───
-    const top10 = classified.slice(0, 10);
+    // ─── Step 4: Deep-analyze top 50 with Sonnet in batches ───
+    const toAnalyze = classified.slice(0, DEEP_ANALYZE_COUNT);
     const analysisResults = await batchProcess(
-      top10,
+      toAnalyze,
       (c) => analyzeStory(c.item, c.classification),
       ANALYZE_BATCH_SIZE
     );

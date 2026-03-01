@@ -2,8 +2,10 @@ import Parser from 'rss-parser';
 
 const parser = new Parser({
   timeout: 10000,
-  headers: {
-    'User-Agent': 'NewsReal.ai/1.0 (Media Analysis Platform)',
+  requestOptions: {
+    headers: {
+      'User-Agent': 'NewsReal.ai/1.0 (Media Analysis Platform)',
+    },
   },
 });
 

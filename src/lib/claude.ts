@@ -19,29 +19,39 @@ export async function analyzeWithSonnet(systemPrompt: string, userPrompt: string
   const anthropic = getAnthropicClient();
   if (!anthropic) return null;
 
-  const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
-    max_tokens: 4096,
-    system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }],
-  });
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    });
 
-  const block = response.content[0];
-  if (block.type === 'text') return block.text;
-  return null;
+    const block = response.content[0];
+    if (block.type === 'text') return block.text;
+    return null;
+  } catch (err) {
+    console.error('Sonnet API error:', err instanceof Error ? err.message : err);
+    return null;
+  }
 }
 
 export async function classifyWithHaiku(prompt: string): Promise<string | null> {
   const anthropic = getAnthropicClient();
   if (!anthropic) return null;
 
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1024,
-    messages: [{ role: 'user', content: prompt }],
-  });
+  try {
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }],
+    });
 
-  const block = response.content[0];
-  if (block.type === 'text') return block.text;
-  return null;
+    const block = response.content[0];
+    if (block.type === 'text') return block.text;
+    return null;
+  } catch (err) {
+    console.error('Haiku API error:', err instanceof Error ? err.message : err);
+    return null;
+  }
 }

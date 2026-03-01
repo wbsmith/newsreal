@@ -1,9 +1,9 @@
 import { fetchFeed, FeedItem } from './rss-parser';
 
 const AP_FEEDS = [
-  { url: 'https://rsshub.app/apnews/topics/apf-topnews', name: 'AP Top News' },
-  { url: 'https://rsshub.app/apnews/topics/apf-politics', name: 'AP Politics' },
-  { url: 'https://rsshub.app/apnews/topics/apf-business', name: 'AP Business' },
+  { url: 'https://feedx.net/rss/ap.xml', name: 'AP Top News' },
+  { url: 'https://news.google.com/rss/search?q=site:apnews.com+politics&hl=en-US&gl=US&ceid=US:en', name: 'AP Politics' },
+  { url: 'https://news.google.com/rss/search?q=site:apnews.com+business&hl=en-US&gl=US&ceid=US:en', name: 'AP Business' },
 ];
 
 export async function fetchAPNews(): Promise<FeedItem[]> {

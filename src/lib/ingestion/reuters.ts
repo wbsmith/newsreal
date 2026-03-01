@@ -1,9 +1,9 @@
 import { fetchFeed, FeedItem } from './rss-parser';
 
 const REUTERS_FEEDS = [
-  { url: 'https://rsshub.app/reuters/world', name: 'Reuters World' },
-  { url: 'https://rsshub.app/reuters/business', name: 'Reuters Business' },
-  { url: 'https://rsshub.app/reuters/technology', name: 'Reuters Tech' },
+  { url: 'https://news.google.com/rss/search?q=site:reuters.com+world&hl=en-US&gl=US&ceid=US:en', name: 'Reuters World' },
+  { url: 'https://news.google.com/rss/search?q=site:reuters.com+business&hl=en-US&gl=US&ceid=US:en', name: 'Reuters Business' },
+  { url: 'https://news.google.com/rss/search?q=site:reuters.com+technology&hl=en-US&gl=US&ceid=US:en', name: 'Reuters Tech' },
 ];
 
 export async function fetchReuters(): Promise<FeedItem[]> {

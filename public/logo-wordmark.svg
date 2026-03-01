@@ -49,7 +49,7 @@
   </g>
 
   <!-- Tagline -->
-  <text x="20" y="108" font-family="'Courier New', Courier, monospace" font-size="10" fill="#8b6914" letter-spacing="4" text-transform="uppercase">THE STORY BEHIND THE STORY</text>
+  <text x="20" y="108" font-family="'Courier New', Courier, monospace" font-size="10" fill="#8b6914" letter-spacing="4" text-transform="uppercase">ALL THE NEWS THAT&apos;S FIT TO SHIT</text>
 
   <!-- Subtle red underline accent -->
   <line x1="18" y1="89" x2="410" y2="89" stroke="#c62828" stroke-width="0.5" opacity="0.3"/>

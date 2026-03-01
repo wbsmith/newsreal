@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Image from 'next/image';
-import { Story } from '@/types';
+import { Story, Narrative, Obfuscation, TickerItem } from '@/types';
 import {
   MOCK_STORIES,
   NARRATIVES,
@@ -27,13 +27,34 @@ export default function Home() {
   const [activeFilter, setActiveFilter] = useState('all');
   const [selectedStory, setSelectedStory] = useState<Story | null>(null);
 
-  // Loading sequence
+  // Data state — initialized with mock data as defaults
+  const [stories, setStories] = useState<Story[]>(MOCK_STORIES);
+  const [narratives, setNarratives] = useState<Narrative[]>(NARRATIVES);
+  const [obfuscations, setObfuscations] = useState<Obfuscation[]>(OBFUSCATIONS);
+  const [tickerItems, setTickerItems] = useState<TickerItem[]>(TICKER_ITEMS);
+  const [suppressedSearches, setSuppressedSearches] = useState<string[]>(SUPPRESSED_SEARCHES);
+
+  // Loading sequence + API fetch
   useEffect(() => {
     let msgIdx = 0;
     const msgInterval = setInterval(() => {
       msgIdx = (msgIdx + 1) % LOADING_MESSAGES.length;
       setLoadingMsg(LOADING_MESSAGES[msgIdx]);
     }, 1800);
+
+    // Fetch real data during loading animation
+    fetch('/api/stories')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.stories?.length > 0) setStories(data.stories);
+        if (data.narratives?.length > 0) setNarratives(data.narratives);
+        if (data.obfuscations?.length > 0) setObfuscations(data.obfuscations);
+        if (data.ticker?.length > 0) setTickerItems(data.ticker);
+        if (data.suppressedSearches?.length > 0) setSuppressedSearches(data.suppressedSearches);
+      })
+      .catch(() => {
+        // Mock data already set as initial state — no change needed
+      });
 
     const loadTimer = setTimeout(() => {
       setLoading(false);
@@ -48,8 +69,8 @@ export default function Home() {
 
   const filteredStories =
     activeFilter === 'all'
-      ? MOCK_STORIES
-      : MOCK_STORIES.filter((s) => s.category === activeFilter);
+      ? stories
+      : stories.filter((s) => s.category === activeFilter);
 
   if (loading) {
     return (
@@ -82,7 +103,7 @@ export default function Home() {
       <Header activeFilter={activeFilter} onFilterChange={setActiveFilter} />
       <DisclaimerBanner />
       <main className="main-content">
-        <Ticker items={TICKER_ITEMS} />
+        <Ticker items={tickerItems} />
         <div className="content-layout">
           <div className="stories-column">
             <StoryGrid
@@ -91,9 +112,9 @@ export default function Home() {
             />
           </div>
           <aside className="sidebar">
-            <NarrativeTracker narratives={NARRATIVES} />
-            <ObfuscationIndex obfuscations={OBFUSCATIONS} />
-            <SuppressedSearches searches={SUPPRESSED_SEARCHES} />
+            <NarrativeTracker narratives={narratives} />
+            <ObfuscationIndex obfuscations={obfuscations} />
+            <SuppressedSearches searches={suppressedSearches} />
           </aside>
         </div>
       </main>

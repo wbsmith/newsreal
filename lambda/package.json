@@ -1,0 +1,21 @@
+{
+  "name": "newsreal-cron-lambda",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "esbuild src/handler.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/index.mjs --external:@aws-sdk --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
+    "package": "npm run build && cd dist && zip -r ../function.zip index.mjs",
+    "deploy": "npm run package && aws lambda update-function-code --function-name newsreal-cron --zip-file fileb://function.zip"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
+    "date-fns": "^4.1.0",
+    "fuzzball": "^2.2.3",
+    "rss-parser": "^3.13.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "@types/node": "^20"
+  }
+}

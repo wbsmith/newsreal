@@ -80,7 +80,7 @@ export default function Home() {
         <main className="main-content">
           <div className="loading-screen">
             <Image
-              src="/icon.svg"
+              src="/icon.png"
               alt=""
               width={80}
               height={80}

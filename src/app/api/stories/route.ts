@@ -1,13 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getCached } from '@/lib/cache';
 import { getRecentStories } from '@/lib/db';
-import {
-  MOCK_STORIES,
-  NARRATIVES,
-  OBFUSCATIONS,
-  SUPPRESSED_SEARCHES,
-  TICKER_ITEMS,
-} from '@/lib/mock-data';
 import { Story, Narrative, Obfuscation, TickerItem } from '@/types';
 
 export async function GET(request: Request) {
@@ -19,7 +12,7 @@ export async function GET(request: Request) {
   let obfuscations: Obfuscation[] | null = null;
   let tickerItems: TickerItem[] | null = null;
   let suppressedSearches: string[] | null = null;
-  let source: 'live' | 'db' | 'mock' = 'mock';
+  let source: 'live' | 'db' = 'db';
 
   // Try 1: DynamoDB cache (fast single GetItem)
   try {
@@ -44,14 +37,13 @@ export async function GET(request: Request) {
         source = 'db';
       }
     } catch {
-      // DB error — continue to mock fallback
+      // DB error — return empty
     }
   }
 
-  // Try 3: Mock data fallback
-  if (!stories || stories.length === 0) {
-    stories = MOCK_STORIES;
-    source = 'mock';
+  // No data available — return empty
+  if (!stories) {
+    stories = [];
   }
 
   // Apply category filter
@@ -61,10 +53,10 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     stories,
-    narratives: narratives || NARRATIVES,
-    obfuscations: obfuscations || OBFUSCATIONS,
-    ticker: tickerItems || TICKER_ITEMS,
-    suppressedSearches: suppressedSearches || SUPPRESSED_SEARCHES,
+    narratives: narratives || [],
+    obfuscations: obfuscations || [],
+    ticker: tickerItems || [],
+    suppressedSearches: suppressedSearches || [],
     source,
   });
 }

@@ -1,6 +1,5 @@
 import { notFound } from 'next/navigation';
 import { getCached } from '@/lib/cache';
-import { MOCK_STORIES } from '@/lib/mock-data';
 import { Story } from '@/types';
 import StoryDetailClient from './StoryDetailClient';
 
@@ -19,11 +18,10 @@ async function findStory(slug: string): Promise<Story | undefined> {
       if (found) return found;
     }
   } catch {
-    // Cache miss — continue to fallback
+    // Cache miss — story not found
   }
 
-  // Fall back to mock data
-  return MOCK_STORIES.find((s) => s.slug === slug);
+  return undefined;
 }
 
 function buildOgImageUrl(story: Story): string {

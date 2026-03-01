@@ -4,14 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Story, Narrative, Obfuscation, TickerItem } from '@/types';
-import {
-  MOCK_STORIES,
-  NARRATIVES,
-  OBFUSCATIONS,
-  SUPPRESSED_SEARCHES,
-  TICKER_ITEMS,
-  LOADING_MESSAGES,
-} from '@/lib/mock-data';
+import { LOADING_MESSAGES } from '@/lib/loading-messages';
 import Header from '@/components/Header';
 import DisclaimerBanner from '@/components/DisclaimerBanner';
 import Ticker from '@/components/Ticker';
@@ -29,12 +22,12 @@ export default function Home() {
   const [activeFilter, setActiveFilter] = useState('all');
   const [selectedStory, setSelectedStory] = useState<Story | null>(null);
 
-  // Data state — initialized with mock data as defaults
-  const [stories, setStories] = useState<Story[]>(MOCK_STORIES);
-  const [narratives, setNarratives] = useState<Narrative[]>(NARRATIVES);
-  const [obfuscations, setObfuscations] = useState<Obfuscation[]>(OBFUSCATIONS);
-  const [tickerItems, setTickerItems] = useState<TickerItem[]>(TICKER_ITEMS);
-  const [suppressedSearches, setSuppressedSearches] = useState<string[]>(SUPPRESSED_SEARCHES);
+  // Data state — empty until API responds
+  const [stories, setStories] = useState<Story[]>([]);
+  const [narratives, setNarratives] = useState<Narrative[]>([]);
+  const [obfuscations, setObfuscations] = useState<Obfuscation[]>([]);
+  const [tickerItems, setTickerItems] = useState<TickerItem[]>([]);
+  const [suppressedSearches, setSuppressedSearches] = useState<string[]>([]);
 
   // Loading sequence + API fetch
   useEffect(() => {
@@ -55,7 +48,7 @@ export default function Home() {
         if (data.suppressedSearches?.length > 0) setSuppressedSearches(data.suppressedSearches);
       })
       .catch(() => {
-        // Mock data already set as initial state — no change needed
+        // API unavailable — sections will show empty state
       });
 
     const loadTimer = setTimeout(() => {

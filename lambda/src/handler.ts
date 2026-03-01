@@ -14,6 +14,7 @@ interface FeedItem {
   contentSnippet?: string;
   content?: string;
   source: string;
+  hintCategory?: Category;
 }
 
 type Category = 'politics' | 'tech' | 'finance' | 'world' | 'science' | 'deep-state';
@@ -79,10 +80,12 @@ interface TickerItem { text: string; severity: 'high' | 'med' | 'low'; linkType?
 
 const CLASSIFY_BATCH_SIZE = 10;
 const ANALYZE_BATCH_SIZE = 5;
-const CLASSIFY_COUNT = 50;
-const DEEP_ANALYZE_COUNT = 50;
-const MAX_STORIES_TO_CACHE = 50;
+const CLASSIFY_COUNT = 120;
+const DEEP_ANALYZE_COUNT = 120;
+const MAX_STORIES_TO_CACHE = 200;
 const CACHE_TTL = 21600; // 6 hours
+
+const ALL_CATEGORIES: Category[] = ['politics', 'tech', 'finance', 'world', 'science', 'deep-state'];
 
 const TABLE_PREFIX = 'newsreal';
 const TABLES = {
@@ -168,27 +171,72 @@ async function fetchFeed(url: string, sourceName: string): Promise<FeedItem[]> {
   }));
 }
 
-const ALL_FEEDS = [
+const GNEWS_SEARCH = 'https://news.google.com/rss/search?hl=en-US&gl=US&ceid=US:en&q=';
+
+const ALL_FEEDS: { url: string; name: string; hintCategory?: Category }[] = [
+  // ─── Generic feeds (no hint) ───
   { url: 'https://feedx.net/rss/ap.xml', name: 'AP Top News' },
-  { url: 'https://news.google.com/rss/search?q=site:apnews.com+politics&hl=en-US&gl=US&ceid=US:en', name: 'AP Politics' },
-  { url: 'https://news.google.com/rss/search?q=site:apnews.com+business&hl=en-US&gl=US&ceid=US:en', name: 'AP Business' },
-  { url: 'https://news.google.com/rss/search?q=site:reuters.com+world&hl=en-US&gl=US&ceid=US:en', name: 'Reuters World' },
-  { url: 'https://news.google.com/rss/search?q=site:reuters.com+business&hl=en-US&gl=US&ceid=US:en', name: 'Reuters Business' },
-  { url: 'https://news.google.com/rss/search?q=site:reuters.com+technology&hl=en-US&gl=US&ceid=US:en', name: 'Reuters Tech' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('site:apnews.com politics')}`, name: 'AP Politics' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('site:apnews.com business')}`, name: 'AP Business' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('site:reuters.com world')}`, name: 'Reuters World' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('site:reuters.com business')}`, name: 'Reuters Business' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('site:reuters.com technology')}`, name: 'Reuters Tech' },
   { url: 'https://news.google.com/rss?hl=en-US&gl=US&ceid=US:en', name: 'Google News' },
-  { url: 'https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx1YlY4U0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en', name: 'Google News' },
-  { url: 'https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en', name: 'Google News' },
-  { url: 'https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGRqTVhZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en', name: 'Google News' },
-  { url: 'https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp0Y1RjU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en', name: 'Google News' },
+  { url: 'https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx1YlY4U0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en', name: 'Google News World' },
+  { url: 'https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGx6TVdZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en', name: 'Google News Business' },
+  { url: 'https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRGRqTVhZU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en', name: 'Google News Tech' },
+  { url: 'https://news.google.com/rss/topics/CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp0Y1RjU0FtVnVHZ0pWVXlnQVAB?hl=en-US&gl=US&ceid=US:en', name: 'Google News Science' },
   { url: 'https://www.reddit.com/r/news/.rss', name: 'Reddit r/news' },
   { url: 'https://www.reddit.com/r/politics/.rss', name: 'Reddit r/politics' },
   { url: 'https://www.reddit.com/r/worldnews/.rss', name: 'Reddit r/worldnews' },
   { url: 'https://www.reddit.com/r/conspiracy/.rss', name: 'Reddit r/conspiracy' },
+
+  // ─── Tech & AI ───
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('site:techcrunch.com')}`, name: 'TechCrunch', hintCategory: 'tech' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('site:arstechnica.com')}`, name: 'Ars Technica', hintCategory: 'tech' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('"artificial intelligence" OR "machine learning"')}`, name: 'AI News', hintCategory: 'tech' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('"cybersecurity" OR "data breach"')}`, name: 'Cybersecurity News', hintCategory: 'tech' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('site:theverge.com')}`, name: 'The Verge', hintCategory: 'tech' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('"OpenAI" OR "Google AI" OR "AI regulation"')}`, name: 'AI Industry', hintCategory: 'tech' },
+
+  // ─── Finance ───
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('site:cnbc.com')}`, name: 'CNBC', hintCategory: 'finance' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('"SEC filing" OR "federal reserve" OR "interest rate"')}`, name: 'Finance Regulation', hintCategory: 'finance' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('"cryptocurrency" OR "bitcoin" OR "ethereum"')}`, name: 'Crypto News', hintCategory: 'finance' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('site:bloomberg.com')}`, name: 'Bloomberg', hintCategory: 'finance' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('"Wall Street" OR "stock market" OR "IPO"')}`, name: 'Markets', hintCategory: 'finance' },
+
+  // ─── Science ───
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('"scientific study" OR "research finds"')}`, name: 'Science Research', hintCategory: 'science' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('"NASA" OR "SpaceX" OR "space exploration"')}`, name: 'Space News', hintCategory: 'science' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('"climate change" OR "climate research"')}`, name: 'Climate Science', hintCategory: 'science' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('"medical research" OR "FDA approval" OR "clinical trial"')}`, name: 'Medical Research', hintCategory: 'science' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('site:nature.com OR site:sciencedaily.com')}`, name: 'Science Journals', hintCategory: 'science' },
+
+  // ─── Deep State ───
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('"federal register" OR "executive order"')}`, name: 'Federal Register', hintCategory: 'deep-state' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('"FOIA" OR "declassified" OR "intelligence community"')}`, name: 'Intel Community', hintCategory: 'deep-state' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('"lobbying disclosure" OR "revolving door" government')}`, name: 'Lobbying Watch', hintCategory: 'deep-state' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('"government contract" OR "defense contractor" OR "no-bid"')}`, name: 'Defense Contracts', hintCategory: 'deep-state' },
+
+  // ─── Politics (supplement) ───
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('site:politico.com')}`, name: 'Politico', hintCategory: 'politics' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('"congressional hearing" OR "subpoena" OR "oversight committee"')}`, name: 'Congressional', hintCategory: 'politics' },
+
+  // ─── World (supplement) ───
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('site:aljazeera.com')}`, name: 'Al Jazeera', hintCategory: 'world' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('site:bbc.com world')}`, name: 'BBC World', hintCategory: 'world' },
 ];
 
 async function fetchAllFeeds(): Promise<{ items: FeedItem[]; sourceErrors: number }> {
   const results = await Promise.allSettled(
-    ALL_FEEDS.map((f) => fetchFeed(f.url, f.name))
+    ALL_FEEDS.map(async (f) => {
+      const items = await fetchFeed(f.url, f.name);
+      if (f.hintCategory) {
+        return items.map((item) => ({ ...item, hintCategory: f.hintCategory }));
+      }
+      return items;
+    })
   );
   const items: FeedItem[] = [];
   let sourceErrors = 0;
@@ -300,17 +348,118 @@ async function batchProcess<T, R>(items: T[], fn: (item: T) => Promise<R>, batch
 function trimForCache(stories: Story[]): Story[] {
   return stories.slice(0, MAX_STORIES_TO_CACHE).map((s) => ({
     ...s,
-    summary: s.summary.slice(0, 500),
-    realAnalysis: s.realAnalysis.slice(0, 1000),
+    summary: s.summary.slice(0, 400),
+    realAnalysis: s.realAnalysis.slice(0, 800),
     deepDive: {
-      mainstream: s.deepDive.mainstream.slice(0, 800),
-      realStory: s.deepDive.realStory.slice(0, 800),
-      leftSpin: s.deepDive.leftSpin.slice(0, 800),
-      rightSpin: s.deepDive.rightSpin.slice(0, 800),
-      whosBenefiting: s.deepDive.whosBenefiting.slice(0, 800),
-      whatsHidden: s.deepDive.whatsHidden.slice(0, 800),
+      mainstream: s.deepDive.mainstream.slice(0, 600),
+      realStory: s.deepDive.realStory.slice(0, 600),
+      leftSpin: s.deepDive.leftSpin.slice(0, 600),
+      rightSpin: s.deepDive.rightSpin.slice(0, 600),
+      whosBenefiting: s.deepDive.whosBenefiting.slice(0, 600),
+      whatsHidden: s.deepDive.whatsHidden.slice(0, 600),
     },
   }));
+}
+
+function selectForClassification(items: FeedItem[], total: number, minPerCategory: number): FeedItem[] {
+  const categoryBuckets = new Map<string, FeedItem[]>();
+  const generalBucket: FeedItem[] = [];
+
+  for (const item of items) {
+    if (item.hintCategory) {
+      const bucket = categoryBuckets.get(item.hintCategory) || [];
+      bucket.push(item);
+      categoryBuckets.set(item.hintCategory, bucket);
+    } else {
+      generalBucket.push(item);
+    }
+  }
+
+  const selected: FeedItem[] = [];
+  const usedLinks = new Set<string>();
+
+  function addItem(item: FeedItem): boolean {
+    if (usedLinks.has(item.link)) return false;
+    usedLinks.add(item.link);
+    selected.push(item);
+    return true;
+  }
+
+  // Phase 1: take up to minPerCategory from each category bucket
+  for (const cat of ALL_CATEGORIES) {
+    const bucket = categoryBuckets.get(cat) || [];
+    let taken = 0;
+    for (const item of bucket) {
+      if (taken >= minPerCategory) break;
+      if (selected.length >= total) break;
+      if (addItem(item)) taken++;
+    }
+  }
+
+  // Phase 2: fill remaining from general bucket
+  for (const item of generalBucket) {
+    if (selected.length >= total) break;
+    addItem(item);
+  }
+
+  // Phase 3: if still room, take overflow from category buckets
+  for (const cat of ALL_CATEGORIES) {
+    const bucket = categoryBuckets.get(cat) || [];
+    for (const item of bucket) {
+      if (selected.length >= total) break;
+      addItem(item);
+    }
+  }
+
+  return selected;
+}
+
+function categoryBalancedSort(classified: { item: FeedItem; classification: Classification }[]): { item: FeedItem; classification: Classification }[] {
+  const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+
+  const byPriority = (a: { classification: Classification }, b: { classification: Classification }) => {
+    const pDiff = priorityOrder[a.classification.priority] - priorityOrder[b.classification.priority];
+    return pDiff !== 0 ? pDiff : b.classification.manipulation_index - a.classification.manipulation_index;
+  };
+
+  const categoryGroups = new Map<Category, { item: FeedItem; classification: Classification }[]>();
+  for (const entry of classified) {
+    const cat = entry.classification.category;
+    const group = categoryGroups.get(cat) || [];
+    group.push(entry);
+    categoryGroups.set(cat, group);
+  }
+
+  for (const group of categoryGroups.values()) {
+    group.sort(byPriority);
+  }
+
+  const result: { item: FeedItem; classification: Classification }[] = [];
+  const used = new Set<number>();
+  let round = 0;
+  let added = true;
+
+  while (added) {
+    added = false;
+    for (const cat of ALL_CATEGORIES) {
+      const group = categoryGroups.get(cat);
+      if (!group || round >= group.length) continue;
+      const entry = group[round];
+      const idx = classified.indexOf(entry);
+      if (!used.has(idx)) {
+        result.push(entry);
+        used.add(idx);
+        added = true;
+      }
+    }
+    round++;
+  }
+
+  for (let i = 0; i < classified.length; i++) {
+    if (!used.has(i)) result.push(classified[i]);
+  }
+
+  return result;
 }
 
 // ─── Prompts ───
@@ -564,7 +713,7 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
   console.log(`  ${unique.length} unique, ${duplicates} duplicates`);
 
   // Step 3: Classify with Haiku
-  const toClassify = unique.slice(0, CLASSIFY_COUNT);
+  const toClassify = selectForClassification(unique, CLASSIFY_COUNT, 15);
   console.log(`Step 3: Classifying ${toClassify.length} stories with Haiku...`);
   const classificationResults = await batchProcess(toClassify, classifyStory, CLASSIFY_BATCH_SIZE);
 
@@ -573,16 +722,12 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
     if (classificationResults[i]) classified.push({ item: toClassify[i], classification: classificationResults[i]! });
   }
 
-  const priorityOrder = { high: 0, medium: 1, low: 2 };
-  classified.sort((a, b) => {
-    const pDiff = priorityOrder[a.classification.priority] - priorityOrder[b.classification.priority];
-    return pDiff !== 0 ? pDiff : b.classification.manipulation_index - a.classification.manipulation_index;
-  });
-  stats.classified = classified.length;
-  console.log(`  Classified ${classified.length} stories`);
+  const sorted = categoryBalancedSort(classified);
+  stats.classified = sorted.length;
+  console.log(`  Classified ${sorted.length} stories`);
 
   // Step 4: Deep-analyze with Sonnet
-  const toAnalyze = classified.slice(0, DEEP_ANALYZE_COUNT);
+  const toAnalyze = sorted.slice(0, DEEP_ANALYZE_COUNT);
   console.log(`Step 4: Deep-analyzing ${toAnalyze.length} stories with Sonnet...`);
   const analysisResults = await batchProcess(toAnalyze, (c) => analyzeStory(c.item, c.classification), ANALYZE_BATCH_SIZE);
 
@@ -594,11 +739,11 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
   console.log(`  Analyzed ${analysisMap.size} stories`);
 
   // Step 5: Build Story objects
-  const stories: Story[] = classified.map((c, i) => feedItemToStory(c.item, c.classification, analysisMap.get(i) ?? null, i));
+  const stories: Story[] = sorted.map((c, i) => feedItemToStory(c.item, c.classification, analysisMap.get(i) ?? null, i));
 
   // Step 6: Sidebar data
   console.log('Step 6: Generating sidebar data...');
-  const headlines = classified.slice(0, 20).map((c) => `[${c.item.source}] ${c.item.title}`);
+  const headlines = sorted.slice(0, 20).map((c) => `[${c.item.source}] ${c.item.title}`);
   const headlineText = headlines.map((h, i) => `${i + 1}. ${h}`).join('\n');
 
   const obfuscationPrompt = buildObfuscationPrompt(headlineText);

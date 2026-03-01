@@ -3,6 +3,7 @@ import { fetchAPNews } from '@/lib/ingestion/ap-news';
 import { fetchReuters } from '@/lib/ingestion/reuters';
 import { fetchGoogleNews } from '@/lib/ingestion/google-news';
 import { fetchReddit } from '@/lib/ingestion/reddit';
+import { fetchCategoryFeeds } from '@/lib/ingestion/category-feeds';
 import { deduplicateStories } from '@/lib/ingestion/dedup';
 import { FeedItem } from '@/lib/ingestion/rss-parser';
 import {
@@ -12,13 +13,13 @@ import {
 } from '@/lib/analysis/story-analyzer';
 import { getCached, setCached } from '@/lib/cache';
 import { Story } from '@/types';
-import { ClassifiedItem, trimForCache, batchProcess } from '@/lib/analysis/pipeline-utils';
+import { ClassifiedItem, trimForCache, batchProcess, selectForClassification, categoryBalancedSort } from '@/lib/analysis/pipeline-utils';
 
 export const maxDuration = 300;
 
 const CACHE_TTL = 21600; // 6 hours
 const CLASSIFY_BATCH_SIZE = 10; // Max concurrent Haiku calls
-const CLASSIFY_COUNT = 30; // Classify top N (keep under 28s Amplify timeout)
+const CLASSIFY_COUNT = 60; // Classify top N
 
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization');
@@ -41,6 +42,7 @@ export async function GET(request: Request) {
       fetchGoogleNews('technology'),
       fetchGoogleNews('science'),
       fetchReddit(),
+      fetchCategoryFeeds(),
     ]);
 
     const allItems: FeedItem[] = [];
@@ -66,7 +68,7 @@ export async function GET(request: Request) {
     // ─── Step 2: Deduplicate across all sources ───
     const { unique, duplicates } = deduplicateStories(allItems);
 
-    const toClassify = unique.slice(0, CLASSIFY_COUNT);
+    const toClassify = selectForClassification(unique, CLASSIFY_COUNT, 8);
 
     // ─── Step 3: Classify stories with Haiku in batches ───
     const classificationResults = await batchProcess(
@@ -83,20 +85,15 @@ export async function GET(request: Request) {
       }
     }
 
-    // Sort by priority (high first) then manipulation score (high first)
-    const priorityOrder = { high: 0, medium: 1, low: 2 };
-    classified.sort((a, b) => {
-      const pDiff = priorityOrder[a.classification.priority] - priorityOrder[b.classification.priority];
-      if (pDiff !== 0) return pDiff;
-      return b.classification.manipulation_index - a.classification.manipulation_index;
-    });
+    // Sort with category balance: interleave categories, then by priority within each
+    const sorted = categoryBalancedSort(classified);
 
     // ─── Step 4: Build stories and cache ───
-    const stories = classified.map((c, i) => feedItemToStory(c.item, c.classification, null, i));
+    const stories = sorted.map((c, i) => feedItemToStory(c.item, c.classification, null, i));
     await setCached('homepage-stories', trimForCache(stories), CACHE_TTL);
 
     // Cache classified items for the analyze step to pick up
-    const classifiedForCache = classified.map((c) => ({
+    const classifiedForCache = sorted.map((c) => ({
       item: {
         title: c.item.title,
         link: c.item.link,

@@ -1,4 +1,5 @@
 import Parser from 'rss-parser';
+import { Category } from '@/types';
 
 const parser = new Parser({
   timeout: 10000,
@@ -18,6 +19,7 @@ export interface FeedItem {
   creator?: string;
   categories?: string[];
   source: string;
+  hintCategory?: Category;
 }
 
 export async function fetchFeed(url: string, sourceName: string): Promise<FeedItem[]> {

@@ -854,6 +854,53 @@ a { color: inherit; text-decoration: none; }
 .search-item:last-child { border-bottom: none; }
 .search-item:hover { color: var(--text-primary); }
 
+.search-item-active {
+  color: var(--accent-gold);
+}
+
+.analyzing-tag {
+  animation: blink 1s step-end infinite;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+/* ═══════════════════ SEARCH ANALYSIS MODAL ═══════════════════ */
+.search-loading {
+  text-align: center;
+  padding: 48px 24px;
+}
+
+.search-results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.search-result-item {
+  display: block;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: all 0.2s;
+  line-height: 1.4;
+}
+
+.search-result-item:hover {
+  border-color: var(--accent-cyan);
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.search-result-source {
+  color: var(--accent-cyan);
+  font-weight: 600;
+}
+
 /* ═══════════════════ FOOTER ═══════════════════ */
 .site-footer {
   border-top: 1px solid var(--border);

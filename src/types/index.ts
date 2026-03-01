@@ -83,6 +83,18 @@ export interface SuppressedSearch {
   query: string;
 }
 
+export interface SearchAnalysis {
+  query: string;
+  resultCount: number;
+  analysisDate: string;
+  mediaPattern: string;
+  whatsRevealed: string;
+  whatsMissing: string;
+  connectionMap: string;
+  whyItsSuppressed: string;
+  searchResults: { title: string; source: string; link: string; snippet: string }[];
+}
+
 export interface TickerItem {
   text: string;
   severity: Severity;

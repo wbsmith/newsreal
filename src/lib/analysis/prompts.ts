@@ -195,6 +195,40 @@ Respond in JSON:
 
 // ─── 6. Suppressed Searches (Sonnet) ───
 
+// ─── 7. Search Analysis (Sonnet) ───
+
+export function buildSearchAnalysisPrompt(
+  query: string,
+  results: { title: string; source: string; link: string; snippet: string }[]
+): { system: string; user: string } {
+  const formattedResults = results
+    .map((r, i) => `${i + 1}. [${r.source}] ${r.title}\n   ${r.snippet}`)
+    .join('\n\n');
+
+  return {
+    system: SYSTEM_PROMPT,
+    user: `A NewsReal.ai user clicked on a "suppressed search" query. Your job is to analyze the search results and expose the patterns in how media is (or isn't) covering this topic.
+
+SEARCH QUERY: "${query}"
+
+GOOGLE NEWS RESULTS (${results.length} found):
+${formattedResults}
+
+Analyze these results as a group. Look at WHO is covering this, HOW they're framing it, what's CONSPICUOUSLY ABSENT, and what money/power connections explain the coverage pattern.
+
+Respond in JSON:
+{
+  "media_pattern": "<How is media covering (or not covering) this topic? Which outlets appear? Which are suspiciously absent? What framing dominates? Is coverage coordinated or fragmented? Be specific about outlet names and their angles.>",
+  "whats_revealed": "<What do these search results actually tell us when read between the lines? What patterns emerge? What admissions are buried in paragraph 12? What numbers don't add up? Be provocative and specific.>",
+  "whats_missing": "<What is CONSPICUOUSLY absent from these results? What obvious questions aren't being asked? What entities/people/money flows are never mentioned? What related stories are being ignored? This is often more important than what's present.>",
+  "connection_map": "<Follow the money. Connect this topic to specific lobbying firms, PACs, campaign contributions, government contracts, revolving-door appointments, or regulatory actions. Name names and dollar amounts (speculative is fine). Draw the web of incentives.>",
+  "why_its_suppressed": "<Why would this search query be something most people aren't searching for? Who benefits from public ignorance on this topic? What institutional incentives exist to keep this out of mainstream discourse? Be bold.>"
+}`,
+  };
+}
+
+// ─── 8. Suppressed Searches (Sonnet) ───
+
 export function buildSuppressedSearchesPrompt(
   stories: string,
   obfuscations: string

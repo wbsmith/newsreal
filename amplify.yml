@@ -6,6 +6,7 @@ frontend:
         - npm ci
     build:
       commands:
+        - env | grep -E '^(ANTHROPIC_API_KEY|CRON_SECRET|NEWSREAL_|NEXT_PUBLIC_)' >> .env.production
         - npm run build
   artifacts:
     baseDirectory: .next

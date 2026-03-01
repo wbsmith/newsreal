@@ -71,9 +71,9 @@ interface Story {
   deepDive: DeepDive;
 }
 
-interface Narrative { text: string; heat: string; coherenceScore?: number; outletsInvolved?: string[]; }
+interface Narrative { text: string; heat: string; coherenceScore?: number; outletsInvolved?: string[]; slug?: string; }
 interface Obfuscation { category: string; whatHappened: string; whyItMatters: string; whatsCoveringIt: string; whoBenefits: string; detectionConfidence: number; sourceUrl?: string; }
-interface TickerItem { text: string; severity: 'high' | 'med' | 'low'; }
+interface TickerItem { text: string; severity: 'high' | 'med' | 'low'; linkType?: 'story' | 'narrative'; linkRef?: string; }
 
 // ─── Config ───
 
@@ -437,7 +437,20 @@ Generate 4-6 narrative patterns.`,
   };
 }
 
-function buildTickerPrompt(stories: string, narratives: string, obfuscations: string): { system: string; user: string } {
+function buildTickerPrompt(
+  stories: string, narratives: string, obfuscations: string,
+  storySlugs: { slug: string; headline: string }[] = [],
+  narrativeSlugs: { slug: string; text: string }[] = []
+): { system: string; user: string } {
+  const storyRefList = storySlugs.length > 0
+    ? '\n\nAVAILABLE STORY REFS (use link_ref to reference these):\n' +
+      storySlugs.map((s) => `- slug: "${s.slug}" = ${s.headline}`).join('\n')
+    : '';
+  const narrativeRefList = narrativeSlugs.length > 0
+    ? '\n\nAVAILABLE NARRATIVE REFS (use link_ref to reference these):\n' +
+      narrativeSlugs.map((n) => `- slug: "${n.slug}" = ${n.text}`).join('\n')
+    : '';
+
   return {
     system: `You generate ticker alerts for the NewsReal.ai scrolling banner. Respond ONLY in valid JSON.`,
     user: `Given these story clusters and analyses from the past 6 hours, generate 8-10 ticker alerts.
@@ -445,16 +458,19 @@ function buildTickerPrompt(stories: string, narratives: string, obfuscations: st
 Stories: ${stories}
 Narratives detected: ${narratives}
 Obfuscations detected: ${obfuscations}
+${storyRefList}
+${narrativeRefList}
 
 Each alert should be:
 - One line, under 100 characters
 - Written in ALL-CAPS label format: "CATEGORY: detail"
 - Provocative and attention-grabbing
+- Where possible, link each ticker item to a related story or narrative using link_type and link_ref
 
 Respond in JSON:
 {
   "ticker_items": [
-    { "text": "<alert text>", "severity": "<high|med|low>" }
+    { "text": "<alert text>", "severity": "<high|med|low>", "link_type": "<story|narrative|null>", "link_ref": "<slug or null>" }
   ]
 }`,
   };
@@ -611,6 +627,7 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
     return parsed.narratives.map((n: any) => ({
       text: n.narrative_text, heat: generateHeatBar(n.coherence_score),
       coherenceScore: n.coherence_score, outletsInvolved: n.outlets_involved,
+      slug: slugify(String(n.narrative_text).replace(/<[^>]*>/g, '')),
     }));
   })();
 
@@ -622,7 +639,13 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
   const narrativeSummaries = narratives.map((n) => n.text);
   const obfuscationSummaries = obfuscations.map((o) => `${o.category}: ${o.whatHappened}`);
 
-  const tickerPrompt = buildTickerPrompt(storySummaries.join('; '), narrativeSummaries.join('; '), obfuscationSummaries.join('; '));
+  const tickerStorySlugs = stories.slice(0, 15).map((s) => ({ slug: s.slug, headline: s.headline }));
+  const tickerNarrativeSlugs = narratives.filter((n) => n.slug).map((n) => ({ slug: n.slug!, text: n.text.replace(/<[^>]*>/g, '') }));
+
+  const tickerPrompt = buildTickerPrompt(
+    storySummaries.join('; '), narrativeSummaries.join('; '), obfuscationSummaries.join('; '),
+    tickerStorySlugs, tickerNarrativeSlugs
+  );
   const suppressedPrompt = buildSuppressedSearchesPrompt(storySummaries.join('; '), obfuscationSummaries.join('; '));
 
   const [tickerRaw, suppressedRaw] = await Promise.all([
@@ -633,7 +656,13 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
   const tickerItems: TickerItem[] = (() => {
     if (!tickerRaw) return [];
     const parsed = parseClaudeJSON<{ ticker_items: any[] }>(tickerRaw);
-    return parsed?.ticker_items || [];
+    if (!parsed?.ticker_items) return [];
+    return parsed.ticker_items.map((item: any) => ({
+      text: item.text,
+      severity: item.severity,
+      linkType: item.link_type || undefined,
+      linkRef: item.link_ref || undefined,
+    }));
   })();
 
   const suppressedSearches: string[] = (() => {

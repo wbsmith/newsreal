@@ -160,13 +160,59 @@ Generate 4-6 narrative patterns. For each, assign a coherence score indicating h
   };
 }
 
+// ─── 4b. Narrative Deep Analysis (Sonnet) ───
+
+export function buildNarrativeAnalysisPrompt(
+  narrativeText: string,
+  coherenceScore: number,
+  outletsInvolved: string[],
+  relatedStories: { slug: string; headline: string }[]
+): { system: string; user: string } {
+  const storiesList = relatedStories.length > 0
+    ? relatedStories.map((s, i) => `${i + 1}. ${s.headline}`).join('\n')
+    : 'None identified';
+
+  return {
+    system: SYSTEM_PROMPT,
+    user: `A NewsReal.ai user clicked on a detected narrative pattern to get a deep analysis. Analyze this coordinated messaging pattern.
+
+NARRATIVE: "${narrativeText}"
+COHERENCE SCORE: ${coherenceScore}/100
+OUTLETS INVOLVED: ${outletsInvolved.join(', ') || 'Unknown'}
+RELATED STORIES FROM TODAY:
+${storiesList}
+
+Analyze this narrative pattern deeply. Who originated it? What evidence of coordination exists? Who benefits from this framing? What alternative framing is being suppressed?
+
+Respond in JSON:
+{
+  "narrative_origin": "<Where did this narrative originate? PR firms, think tanks, government press offices, wire services? Trace the likely chain of messaging. Be specific about entities, dates, and documented coordination patterns.>",
+  "coordination_evidence": "<What specific evidence points to coordinated messaging? Identical phrases, synchronized timing, shared sources? Compare outlet-by-outlet. Name the specific language patterns.>",
+  "who_benefits": "<Who specifically benefits from this narrative frame? Name names, companies, politicians, PACs. Follow the money. What dollar amounts are at stake? What policy outcomes does this narrative support?>",
+  "suppressed_alternative": "<What alternative framing is being suppressed? What questions aren't being asked? What connections aren't being drawn? What would the story look like if covered without this narrative frame?>"
+}`,
+  };
+}
+
 // ─── 5. Ticker Alerts (Sonnet) ───
 
 export function buildTickerPrompt(
   stories: string,
   narratives: string,
-  obfuscations: string
+  obfuscations: string,
+  storySlugs: { slug: string; headline: string }[] = [],
+  narrativeSlugs: { slug: string; text: string }[] = []
 ): { system: string; user: string } {
+  const storyRefList = storySlugs.length > 0
+    ? '\n\nAVAILABLE STORY REFS (use link_ref to reference these):\n' +
+      storySlugs.map((s) => `- slug: "${s.slug}" = ${s.headline}`).join('\n')
+    : '';
+
+  const narrativeRefList = narrativeSlugs.length > 0
+    ? '\n\nAVAILABLE NARRATIVE REFS (use link_ref to reference these):\n' +
+      narrativeSlugs.map((n) => `- slug: "${n.slug}" = ${n.text}`).join('\n')
+    : '';
+
   return {
     system: `You generate ticker alerts for the NewsReal.ai scrolling banner. Respond ONLY in valid JSON.`,
     user: `Given these story clusters and analyses from the past 6 hours, generate 8-10 ticker alerts.
@@ -174,19 +220,24 @@ export function buildTickerPrompt(
 Stories: ${stories}
 Narratives detected: ${narratives}
 Obfuscations detected: ${obfuscations}
+${storyRefList}
+${narrativeRefList}
 
 Each alert should be:
 - One line, under 100 characters
 - Written in ALL-CAPS label format: "CATEGORY: detail"
 - Provocative and attention-grabbing
 - Mix of narrative alerts, obfuscation warnings, and bias detections
+- Where possible, link each ticker item to a related story or narrative using link_type and link_ref
 
 Respond in JSON:
 {
   "ticker_items": [
     {
       "text": "<alert text>",
-      "severity": "<high|med|low>"
+      "severity": "<high|med|low>",
+      "link_type": "<story|narrative|null>",
+      "link_ref": "<slug of story or narrative, or null>"
     }
   ]
 }`,

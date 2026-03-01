@@ -77,6 +77,20 @@ export interface Narrative {
   heat: string;
   coherenceScore?: number;
   outletsInvolved?: string[];
+  slug?: string;
+}
+
+export interface NarrativeAnalysis {
+  slug: string;
+  narrativeText: string;
+  coherenceScore: number;
+  outletsInvolved: string[];
+  analysisDate: string;
+  narrativeOrigin: string;
+  coordinationEvidence: string;
+  whoBenefits: string;
+  suppressedAlternative: string;
+  relatedStories: { slug: string; headline: string }[];
 }
 
 export interface SuppressedSearch {
@@ -98,4 +112,6 @@ export interface SearchAnalysis {
 export interface TickerItem {
   text: string;
   severity: Severity;
+  linkType?: 'story' | 'narrative';
+  linkRef?: string;
 }

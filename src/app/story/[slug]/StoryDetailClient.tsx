@@ -6,6 +6,7 @@ import DisclaimerBanner from '@/components/DisclaimerBanner';
 import BiasTag from '@/components/BiasTag';
 import ManipulationMeter from '@/components/ManipulationMeter';
 import RedactedText from '@/components/RedactedText';
+import ShareButtons from '@/components/ShareButtons';
 import Footer from '@/components/Footer';
 
 interface StoryDetailClientProps {
@@ -33,6 +34,8 @@ export default function StoryDetailClient({ story }: StoryDetailClientProps) {
           </p>
 
           <ManipulationMeter score={story.manipulationScore} />
+
+          <ShareButtons slug={story.slug} headline={story.headline} />
 
           <div className="modal-section">
             <div className="modal-section-title">

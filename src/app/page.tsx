@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Story, Narrative, Obfuscation, TickerItem } from '@/types';
 import {
@@ -22,6 +23,7 @@ import SuppressedSearches from '@/components/SuppressedSearches';
 import Footer from '@/components/Footer';
 
 export default function Home() {
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [loadingMsg, setLoadingMsg] = useState(LOADING_MESSAGES[0]);
   const [activeFilter, setActiveFilter] = useState('all');
@@ -67,6 +69,21 @@ export default function Home() {
     };
   }, []);
 
+  const handleTickerClick = useCallback(
+    (item: TickerItem) => {
+      if (item.linkType === 'story' && item.linkRef) {
+        router.push(`/story/${item.linkRef}`);
+      } else if (item.linkType === 'narrative' && item.linkRef) {
+        // Scroll to sidebar narratives panel
+        const sidebar = document.querySelector('.sidebar');
+        if (sidebar) {
+          sidebar.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
+    },
+    [router]
+  );
+
   const filteredStories =
     activeFilter === 'all'
       ? stories
@@ -103,7 +120,7 @@ export default function Home() {
       <Header activeFilter={activeFilter} onFilterChange={setActiveFilter} />
       <DisclaimerBanner />
       <main className="main-content">
-        <Ticker items={tickerItems} />
+        <Ticker items={tickerItems} onItemClick={handleTickerClick} />
         <div className="content-layout">
           <div className="stories-column">
             <StoryGrid

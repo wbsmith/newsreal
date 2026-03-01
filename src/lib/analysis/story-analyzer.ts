@@ -63,7 +63,12 @@ interface NarrativeResult {
 }
 
 interface TickerResult {
-  ticker_items: { text: string; severity: 'high' | 'med' | 'low' }[];
+  ticker_items: {
+    text: string;
+    severity: 'high' | 'med' | 'low';
+    link_type?: 'story' | 'narrative' | null;
+    link_ref?: string | null;
+  }[];
 }
 
 interface SuppressedResult {
@@ -162,6 +167,7 @@ export async function generateNarratives(headlines: string[]): Promise<Narrative
     heat: generateHeatBar(n.coherence_score),
     coherenceScore: n.coherence_score,
     outletsInvolved: n.outlets_involved,
+    slug: slugify(n.narrative_text.replace(/<[^>]*>/g, '')),
   }));
 }
 
@@ -176,12 +182,16 @@ function generateHeatBar(score: number): string {
 export async function generateTickerItems(
   stories: string[],
   narratives: string[],
-  obfuscations: string[]
+  obfuscations: string[],
+  storySlugs: { slug: string; headline: string }[] = [],
+  narrativeSlugs: { slug: string; text: string }[] = []
 ): Promise<TickerItem[]> {
   const { system, user } = buildTickerPrompt(
     stories.join('; '),
     narratives.join('; '),
-    obfuscations.join('; ')
+    obfuscations.join('; '),
+    storySlugs,
+    narrativeSlugs
   );
 
   const raw = await analyzeWithSonnet(system, user);
@@ -190,7 +200,12 @@ export async function generateTickerItems(
   const parsed = parseClaudeJSON<TickerResult>(raw);
   if (!parsed?.ticker_items) return [];
 
-  return parsed.ticker_items;
+  return parsed.ticker_items.map((item) => ({
+    text: item.text,
+    severity: item.severity,
+    linkType: item.link_type || undefined,
+    linkRef: item.link_ref || undefined,
+  }));
 }
 
 // ─── Suppressed Searches ───

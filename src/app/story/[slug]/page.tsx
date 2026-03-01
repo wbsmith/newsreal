@@ -26,13 +26,53 @@ async function findStory(slug: string): Promise<Story | undefined> {
   return MOCK_STORIES.find((s) => s.slug === slug);
 }
 
+function buildOgImageUrl(story: Story): string {
+  const base = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.newsreal.ai';
+  const params = new URLSearchParams({
+    headline: story.headline,
+    bias: story.biasTag.label,
+    score: String(story.manipulationScore),
+    source: story.source,
+  });
+  return `${base}/api/og?${params.toString()}`;
+}
+
 export async function generateMetadata({ params }: StoryPageProps) {
   const { slug } = await params;
   const story = await findStory(slug);
   if (!story) return { title: 'Story Not Found' };
+
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.newsreal.ai';
+  const canonicalUrl = `${siteUrl}/story/${slug}`;
+  const ogImageUrl = buildOgImageUrl(story);
+
   return {
-    title: `${story.headline} \u2014 NewsReal.ai`,
+    title: `${story.headline} — NewsReal.ai`,
     description: story.summary,
+    openGraph: {
+      title: story.headline,
+      description: story.summary,
+      url: canonicalUrl,
+      siteName: 'NewsReal.ai',
+      type: 'article',
+      images: [
+        {
+          url: ogImageUrl,
+          width: 1200,
+          height: 630,
+          alt: story.headline,
+        },
+      ],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: story.headline,
+      description: story.summary,
+      images: [ogImageUrl],
+    },
+    alternates: {
+      canonical: canonicalUrl,
+    },
   };
 }
 

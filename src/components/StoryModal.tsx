@@ -5,6 +5,7 @@ import { Story } from '@/types';
 import BiasTag from './BiasTag';
 import ManipulationMeter from './ManipulationMeter';
 import RedactedText from './RedactedText';
+import ShareButtons from './ShareButtons';
 
 interface StoryModalProps {
   story: Story | null;
@@ -56,6 +57,8 @@ export default function StoryModal({ story, onClose }: StoryModalProps) {
         </p>
 
         <ManipulationMeter score={story.manipulationScore} />
+
+        <ShareButtons slug={story.slug} headline={story.headline} />
 
         <div className="modal-section">
           <div className="modal-section-title">
@@ -115,6 +118,13 @@ export default function StoryModal({ story, onClose }: StoryModalProps) {
         )}
 
         <div className="modal-section" style={{ textAlign: 'center' }}>
+          <a
+            href={`/story/${story.slug}`}
+            className="dossier-link"
+            onClick={(e) => e.stopPropagation()}
+          >
+            [VIEW FULL DOSSIER]
+          </a>
           <p
             style={{
               fontFamily: 'var(--font-mono)',
@@ -122,6 +132,7 @@ export default function StoryModal({ story, onClose }: StoryModalProps) {
               letterSpacing: '1.5px',
               color: 'var(--text-muted)',
               textTransform: 'uppercase',
+              marginTop: '16px',
             }}
           >
             {'\u26A0'} This analysis is AI-generated speculation. Verify all claims independently.

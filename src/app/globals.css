@@ -961,6 +961,85 @@ a { color: inherit; text-decoration: none; }
   color: var(--accent-red-glow);
 }
 
+/* ═══════════════════ SHARE BUTTONS ═══════════════════ */
+.share-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.share-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+}
+
+.share-btn:hover {
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+  background: rgba(0, 188, 212, 0.05);
+}
+
+/* ═══════════════════ DOSSIER LINK ═══════════════════ */
+.dossier-link {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--accent-red);
+  border: 1px solid var(--accent-red);
+  padding: 10px 24px;
+  transition: all 0.2s;
+  text-decoration: none;
+}
+
+.dossier-link:hover {
+  background: rgba(198, 40, 40, 0.1);
+  box-shadow: 0 0 12px rgba(198, 40, 40, 0.2);
+}
+
+/* ═══════════════════ CLICKABLE NARRATIVES ═══════════════════ */
+.narrative-item-clickable {
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.narrative-item-clickable:hover {
+  background: rgba(212, 160, 23, 0.04);
+}
+
+.narrative-item-clickable:hover .narrative-text {
+  color: var(--text-primary);
+}
+
+.narrative-item-active {
+  background: rgba(212, 160, 23, 0.08);
+}
+
+.narrative-item-active .narrative-rank {
+  color: var(--accent-gold);
+}
+
+/* ═══════════════════ CLICKABLE TICKER ═══════════════════ */
+.ticker-item-clickable {
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ticker-item-clickable:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 /* ═══════════════════ RESPONSIVE ═══════════════════ */
 @media (max-width: 1024px) {
   .content-layout {

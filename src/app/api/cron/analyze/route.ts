@@ -64,8 +64,13 @@ export async function GET(request: Request) {
       const narrativeSummaries = narratives.map((n) => n.text);
       const obfuscationSummaries = obfuscations.map((o) => `${o.category}: ${o.whatHappened}`);
 
+      const storySlugs = existingStories.slice(0, 15).map((s) => ({ slug: s.slug, headline: s.headline }));
+      const narrativeSlugs = narratives
+        .filter((n): n is typeof n & { slug: string } => !!n.slug)
+        .map((n) => ({ slug: n.slug, text: n.text.replace(/<[^>]*>/g, '') }));
+
       const [tickerItems, suppressedSearches] = await Promise.all([
-        generateTickerItems(storySummaries, narrativeSummaries, obfuscationSummaries),
+        generateTickerItems(storySummaries, narrativeSummaries, obfuscationSummaries, storySlugs, narrativeSlugs),
         generateSuppressedSearches(storySummaries, obfuscationSummaries),
       ]);
 

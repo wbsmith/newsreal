@@ -7,62 +7,20 @@ import { deduplicateStories } from '@/lib/ingestion/dedup';
 import { FeedItem } from '@/lib/ingestion/rss-parser';
 import {
   classifyStory,
-  analyzeStory,
-  generateObfuscationIndex,
-  generateNarratives,
-  generateTickerItems,
-  generateSuppressedSearches,
   feedItemToStory,
   Classification,
 } from '@/lib/analysis/story-analyzer';
-import { putStory } from '@/lib/db';
 import { getCached, setCached } from '@/lib/cache';
 import { Story } from '@/types';
+import { ClassifiedItem, trimForCache, batchProcess } from '@/lib/analysis/pipeline-utils';
 
 export const maxDuration = 300;
 
 const CACHE_TTL = 21600; // 6 hours
 const CLASSIFY_BATCH_SIZE = 10; // Max concurrent Haiku calls
-const ANALYZE_BATCH_SIZE = 5; // Max concurrent Sonnet calls
-const DEEP_ANALYZE_COUNT = 50; // Top N stories get Sonnet deep-dive
-const MAX_STORIES_TO_CACHE = 50; // Keep cache under DynamoDB 400KB limit
-
-// Run tasks in batches to avoid rate limits
-async function batchProcess<T, R>(
-  items: T[],
-  fn: (item: T) => Promise<R>,
-  batchSize: number
-): Promise<(R | null)[]> {
-  const results: (R | null)[] = [];
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, i + batchSize);
-    const batchResults = await Promise.allSettled(batch.map(fn));
-    for (const result of batchResults) {
-      results.push(result.status === 'fulfilled' ? result.value : null);
-    }
-  }
-  return results;
-}
-
-// Trim content fields so stories fit in DynamoDB's 400KB item limit
-function trimForCache(stories: Story[]): Story[] {
-  return stories.slice(0, MAX_STORIES_TO_CACHE).map((s) => ({
-    ...s,
-    summary: s.summary.slice(0, 500),
-    realAnalysis: s.realAnalysis.slice(0, 1000),
-    deepDive: {
-      mainstream: s.deepDive.mainstream.slice(0, 800),
-      realStory: s.deepDive.realStory.slice(0, 800),
-      leftSpin: s.deepDive.leftSpin.slice(0, 800),
-      rightSpin: s.deepDive.rightSpin.slice(0, 800),
-      whosBenefiting: s.deepDive.whosBenefiting.slice(0, 800),
-      whatsHidden: s.deepDive.whatsHidden.slice(0, 800),
-    },
-  }));
-}
+const CLASSIFY_COUNT = 30; // Classify top N (keep under 28s Amplify timeout)
 
 export async function GET(request: Request) {
-  // Verify cron secret
   const authHeader = request.headers.get('authorization');
   const cronSecret = process.env.CRON_SECRET;
 
@@ -73,11 +31,6 @@ export async function GET(request: Request) {
   const startTime = Date.now();
 
   try {
-    // ─── Throttle check: skip full AI pipeline if last run was <1 hour ago ───
-    const lastRun = await getCached<number>('pipeline-last-run');
-    const now = Date.now();
-    const fullPipeline = !lastRun || (now - lastRun) > 3600000; // 1 hour
-
     // ─── Step 1: Fetch all RSS sources in parallel ───
     const feedResults = await Promise.allSettled([
       fetchAPNews(),
@@ -113,8 +66,7 @@ export async function GET(request: Request) {
     // ─── Step 2: Deduplicate across all sources ───
     const { unique, duplicates } = deduplicateStories(allItems);
 
-    // Classify top 75 most recent (cheap Haiku calls, gives enough pool for 50 deep dives)
-    const toClassify = unique.slice(0, 75);
+    const toClassify = unique.slice(0, CLASSIFY_COUNT);
 
     // ─── Step 3: Classify stories with Haiku in batches ───
     const classificationResults = await batchProcess(
@@ -123,7 +75,7 @@ export async function GET(request: Request) {
       CLASSIFY_BATCH_SIZE
     );
 
-    const classified: { item: FeedItem; classification: Classification }[] = [];
+    const classified: ClassifiedItem[] = [];
     for (let i = 0; i < classificationResults.length; i++) {
       const result = classificationResults[i];
       if (result) {
@@ -139,109 +91,38 @@ export async function GET(request: Request) {
       return b.classification.manipulation_index - a.classification.manipulation_index;
     });
 
-    if (!fullPipeline) {
-      // Lightweight run: just store classified stories with minimal data
-      const stories = classified.map((c, i) => feedItemToStory(c.item, c.classification, null, i));
-      await setCached('homepage-stories', trimForCache(stories), CACHE_TTL);
+    // ─── Step 4: Build stories and cache ───
+    const stories = classified.map((c, i) => feedItemToStory(c.item, c.classification, null, i));
+    await setCached('homepage-stories', trimForCache(stories), CACHE_TTL);
 
-      return NextResponse.json({
-        success: true,
-        mode: 'lightweight',
-        stats: {
-          fetched: allItems.length,
-          deduped: duplicates.length,
-          unique: unique.length,
-          classified: classified.length,
-        },
-        duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
-        timestamp: new Date().toISOString(),
-      });
-    }
-
-    // ─── Step 4: Deep-analyze top 50 with Sonnet in batches ───
-    const toAnalyze = classified.slice(0, DEEP_ANALYZE_COUNT);
-    const analysisResults = await batchProcess(
-      toAnalyze,
-      (c) => analyzeStory(c.item, c.classification),
-      ANALYZE_BATCH_SIZE
-    );
-
-    // Build analysis map (index → result)
-    const analysisMap = new Map<number, NonNullable<typeof analysisResults[number]>>();
-    for (let i = 0; i < analysisResults.length; i++) {
-      if (analysisResults[i]) {
-        analysisMap.set(i, analysisResults[i]!);
-      }
-    }
-
-    // ─── Step 5: Convert all classified stories to Story objects ───
-    const stories: Story[] = classified.map((c, i) => {
-      const analysis = analysisMap.get(i) ?? null;
-      return feedItemToStory(c.item, c.classification, analysis, i);
-    });
-
-    // ─── Step 6: Generate sidebar data in parallel ───
-    const headlines = classified.slice(0, 20).map((c) => `[${c.item.source}] ${c.item.title}`);
-
-    const [obfuscations, narratives] = await Promise.all([
-      generateObfuscationIndex(headlines),
-      generateNarratives(headlines),
-    ]);
-
-    // Ticker and suppressed searches depend on the above
-    const storySummaries = stories.slice(0, 15).map((s) => `${s.headline} (${s.source})`);
-    const narrativeSummaries = narratives.map((n) => n.text);
-    const obfuscationSummaries = obfuscations.map((o) => `${o.category}: ${o.whatHappened}`);
-
-    const [tickerItems, suppressedSearches] = await Promise.all([
-      generateTickerItems(storySummaries, narrativeSummaries, obfuscationSummaries),
-      generateSuppressedSearches(storySummaries, obfuscationSummaries),
-    ]);
-
-    // ─── Step 7: Store top stories in DynamoDB ───
-    const storeResults = await Promise.allSettled(
-      stories.slice(0, 20).map((story) =>
-        putStory({
-          ...story,
-          id: story.slug,
-          summary: story.summary.slice(0, 500),
-          publishedAt: new Date().toISOString(),
-        })
-      )
-    );
-    const stored = storeResults.filter((r) => r.status === 'fulfilled').length;
-
-    // ─── Step 8: Cache assembled page data (trimmed to fit 400KB) ───
-    await Promise.allSettled([
-      setCached('homepage-stories', trimForCache(stories), CACHE_TTL),
-      setCached('homepage-narratives', narratives, CACHE_TTL),
-      setCached('homepage-obfuscations', obfuscations, CACHE_TTL),
-      setCached('homepage-ticker', tickerItems, CACHE_TTL),
-      setCached('homepage-suppressed', suppressedSearches, CACHE_TTL),
-      setCached('pipeline-last-run', Date.now(), CACHE_TTL),
-    ]);
+    // Cache classified items for the analyze step to pick up
+    const classifiedForCache = classified.map((c) => ({
+      item: {
+        title: c.item.title,
+        link: c.item.link,
+        source: c.item.source,
+        pubDate: c.item.pubDate,
+        contentSnippet: (c.item.contentSnippet || c.item.content || '').slice(0, 500),
+        content: '',
+      },
+      classification: c.classification,
+    }));
+    await setCached('pipeline-classified', classifiedForCache, CACHE_TTL);
 
     return NextResponse.json({
       success: true,
-      mode: 'full',
       stats: {
         fetched: allItems.length,
         deduped: duplicates.length,
         unique: unique.length,
         classified: classified.length,
-        analyzed: analysisMap.size,
-        stored,
-        narratives: narratives.length,
-        obfuscations: obfuscations.length,
-        tickerItems: tickerItems.length,
-        suppressedSearches: suppressedSearches.length,
         sourceErrors,
       },
       duration: `${((Date.now() - startTime) / 1000).toFixed(1)}s`,
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    console.error('Pipeline error:', error);
+    console.error('Ingest pipeline error:', error);
     return NextResponse.json(
       {
         success: false,

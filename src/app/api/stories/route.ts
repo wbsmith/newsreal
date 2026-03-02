@@ -1,58 +1,60 @@
 import { NextResponse } from 'next/server';
 import { getCached } from '@/lib/cache';
-import { getRecentStories } from '@/lib/db';
+import { batchGetStories, getRecentStories } from '@/lib/db';
 import { Story, Narrative, Obfuscation, TickerItem } from '@/types';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const category = searchParams.get('category');
 
-  let stories: Story[] | null = null;
-  let narratives: Narrative[] | null = null;
-  let obfuscations: Obfuscation[] | null = null;
-  let tickerItems: TickerItem[] | null = null;
-  let suppressedSearches: string[] | null = null;
-  let source: 'live' | 'db' = 'db';
+  let stories: Story[] = [];
+  let narratives: Narrative[] = [];
+  let obfuscations: Obfuscation[] = [];
+  let tickerItems: TickerItem[] = [];
+  let suppressedSearches: string[] = [];
+  let source: 'manifest' | 'db' = 'db';
 
-  // Read all cache keys in parallel — sidebar data is independent of stories
-  try {
-    const [cachedStories, cachedNarratives, cachedObfuscations, cachedTicker, cachedSuppressed] =
-      await Promise.all([
-        getCached<Story[]>('homepage-stories'),
-        getCached<Narrative[]>('homepage-narratives'),
-        getCached<Obfuscation[]>('homepage-obfuscations'),
-        getCached<TickerItem[]>('homepage-ticker'),
-        getCached<string[]>('homepage-suppressed'),
-      ]);
+  // Read manifest + sidebar data from cache in parallel
+  const [manifest, cachedNarratives, cachedObfuscations, cachedTicker, cachedSuppressed] =
+    await Promise.all([
+      getCached<string[]>('homepage-manifest').catch(() => null),
+      getCached<Narrative[]>('homepage-narratives').catch(() => null),
+      getCached<Obfuscation[]>('homepage-obfuscations').catch(() => null),
+      getCached<TickerItem[]>('homepage-ticker').catch(() => null),
+      getCached<string[]>('homepage-suppressed').catch(() => null),
+    ]);
 
-    if (cachedStories && cachedStories.length > 0) {
-      stories = cachedStories;
-      source = 'live';
+  if (cachedNarratives) narratives = cachedNarratives;
+  if (cachedObfuscations) obfuscations = cachedObfuscations;
+  if (cachedTicker) tickerItems = cachedTicker;
+  if (cachedSuppressed) suppressedSearches = cachedSuppressed;
+
+  // Primary path: manifest (ordered slug list) → batch get full stories from DynamoDB
+  if (manifest && manifest.length > 0) {
+    try {
+      const items = await batchGetStories(manifest);
+      // Re-order to match manifest order
+      const bySlug = new Map(items.map((item) => [item.id as string, item]));
+      stories = manifest
+        .map((slug) => bySlug.get(slug))
+        .filter(Boolean) as unknown as Story[];
+      source = 'manifest';
+    } catch {
+      // Batch get failed — fall through to scan
     }
-    // Always use sidebar data if available, even if stories cache missed
-    narratives = cachedNarratives;
-    obfuscations = cachedObfuscations;
-    tickerItems = cachedTicker;
-    suppressedSearches = cachedSuppressed;
-  } catch {
-    // Cache miss or error — continue to fallback
   }
 
-  // Fallback: DynamoDB scan for stories only
-  if (!stories || stories.length === 0) {
+  // Fallback: DynamoDB scan (unordered, no sidebar data)
+  if (stories.length === 0) {
     try {
       const dbStories = await getRecentStories(120);
-      if (dbStories && dbStories.length > 0) {
+      if (dbStories.length > 0) {
         stories = dbStories as unknown as Story[];
         source = 'db';
       }
     } catch {
       // DB error — return empty
     }
-  }
-
-  if (!stories) {
-    stories = [];
   }
 
   // Apply category filter
@@ -62,10 +64,10 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     stories,
-    narratives: narratives || [],
-    obfuscations: obfuscations || [],
-    ticker: tickerItems || [],
-    suppressedSearches: suppressedSearches || [],
+    narratives,
+    obfuscations,
+    ticker: tickerItems,
+    suppressedSearches,
     source,
   });
 }

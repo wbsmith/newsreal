@@ -100,7 +100,6 @@ const CLASSIFY_BATCH_SIZE = 10;
 const ANALYZE_BATCH_SIZE = 5;
 const CLASSIFY_COUNT = 120;
 const DEEP_ANALYZE_COUNT = 120;
-const MAX_STORIES_TO_CACHE = 200;
 const CACHE_TTL = 21600; // 6 hours
 const ENABLE_ARTICLE_FETCH = false; // Feature flag: fetch full article text via Readability
 const ARTICLE_FETCH_BATCH_SIZE = 20;
@@ -468,34 +467,6 @@ async function batchProcess<T, R>(items: T[], fn: (item: T) => Promise<R>, batch
   return results;
 }
 
-function trimForCache(stories: Story[]): Story[] {
-  // Homepage grid only needs: id, slug, category, featured, source, sourceUrl, time,
-  // headline, summary, biasTag, manipulationScore, realAnalysis (featured only).
-  // Deep dive + manipulationBreakdown are fetched on-demand from DynamoDB when modal opens.
-  // Must stay well under DynamoDB's 400KB item limit for 120 stories.
-  return stories.slice(0, MAX_STORIES_TO_CACHE).map((s) => ({
-    id: s.id,
-    slug: s.slug,
-    category: s.category,
-    featured: s.featured,
-    source: s.source,
-    sourceUrl: s.sourceUrl,
-    time: s.time,
-    headline: s.headline,
-    summary: s.summary.slice(0, 300),
-    biasTag: s.biasTag,
-    manipulationScore: s.manipulationScore,
-    realAnalysis: s.featured ? s.realAnalysis.slice(0, 500) : '',
-    deepDive: {
-      mainstream: '',
-      realStory: '',
-      leftSpin: '',
-      rightSpin: '',
-      whosBenefiting: '',
-      whatsHidden: '',
-    },
-  }));
-}
 
 function selectForClassification(items: FeedItem[], total: number, minPerCategory: number): FeedItem[] {
   const categoryBuckets = new Map<string, FeedItem[]>();
@@ -1085,29 +1056,31 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
   stats.suppressedSearches = suppressedSearches.length;
   console.log(`  Sidebar: ${obfuscations.length} obfuscations, ${narratives.length} narratives, ${tickerItems.length} ticker, ${suppressedSearches.length} suppressed`);
 
-  // Step 8: Store in DynamoDB
-  console.log('Step 8: Storing to DynamoDB...');
+  // Step 8: Store each story individually in DynamoDB
+  console.log('Step 8: Storing stories to DynamoDB...');
+  const publishedAt = new Date().toISOString();
   const storeResults = await Promise.allSettled(
-    stories.slice(0, 20).map((story) =>
-      putStory({ ...story, id: story.slug, summary: story.summary.slice(0, 500), publishedAt: new Date().toISOString() })
+    stories.map((story) =>
+      putStory({ ...story, id: story.slug, publishedAt })
     )
   );
-  stats.stored = storeResults.filter((r) => r.status === 'fulfilled').length;
+  const stored = storeResults.filter((r) => r.status === 'fulfilled').length;
+  const failed = storeResults.filter((r) => r.status === 'rejected').length;
+  stats.stored = stored;
+  console.log(`  Stored ${stored}/${stories.length} stories${failed ? ` (${failed} failed)` : ''}`);
 
-  // Step 9: Cache everything
-  console.log('Step 9: Caching page data...');
-  const trimmed = trimForCache(stories);
-  const trimmedSize = JSON.stringify(trimmed).length;
-  console.log(`  Cache payload: ${trimmed.length} stories, ~${Math.round(trimmedSize / 1024)}KB`);
+  // Step 9: Cache manifest (ordered slug list) + sidebar data
+  console.log('Step 9: Caching manifest + sidebar data...');
+  const manifest = stories.map((s) => s.slug);
   const cacheResults = await Promise.allSettled([
-    setCached('homepage-stories', trimmed, CACHE_TTL),
+    setCached('homepage-manifest', manifest, CACHE_TTL),
     setCached('homepage-narratives', narratives, CACHE_TTL),
     setCached('homepage-obfuscations', obfuscations, CACHE_TTL),
     setCached('homepage-ticker', tickerItems, CACHE_TTL),
     setCached('homepage-suppressed', suppressedSearches, CACHE_TTL),
     setCached('pipeline-last-run', Date.now(), CACHE_TTL),
   ]);
-  const cacheKeys = ['homepage-stories', 'homepage-narratives', 'homepage-obfuscations', 'homepage-ticker', 'homepage-suppressed', 'pipeline-last-run'];
+  const cacheKeys = ['homepage-manifest', 'homepage-narratives', 'homepage-obfuscations', 'homepage-ticker', 'homepage-suppressed', 'pipeline-last-run'];
   cacheResults.forEach((r, i) => {
     if (r.status === 'rejected') console.error(`  Cache write FAILED for ${cacheKeys[i]}: ${r.reason}`);
   });

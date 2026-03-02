@@ -5,6 +5,7 @@ import {
   GetCommand,
   QueryCommand,
   ScanCommand,
+  BatchGetCommand,
 } from '@aws-sdk/lib-dynamodb';
 
 const TABLE_PREFIX = 'newsreal';
@@ -87,6 +88,31 @@ export async function getRecentStories(limit = 20) {
     })
   );
   return result.Items ?? [];
+}
+
+export async function batchGetStories(slugs: string[]): Promise<Record<string, unknown>[]> {
+  const db = getDynamoDB();
+  if (!db || slugs.length === 0) return [];
+
+  const results: Record<string, unknown>[] = [];
+
+  // BatchGetItem max 100 keys per request
+  for (let i = 0; i < slugs.length; i += 100) {
+    const batch = slugs.slice(i, i + 100);
+    const resp = await db.send(
+      new BatchGetCommand({
+        RequestItems: {
+          [TABLES.stories]: {
+            Keys: batch.map((slug) => ({ id: slug })),
+          },
+        },
+      })
+    );
+    const items = resp.Responses?.[TABLES.stories] ?? [];
+    results.push(...items);
+  }
+
+  return results;
 }
 
 // ─── Analysis Operations ───

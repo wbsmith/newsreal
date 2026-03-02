@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCached, setCached } from '@/lib/cache';
+import { batchGetStories } from '@/lib/db';
 import { analyzeWithSonnet } from '@/lib/claude';
 import { buildNarrativeAnalysisPrompt } from '@/lib/analysis/prompts';
 import { parseClaudeJSON } from '@/lib/utils';
-import { Narrative, NarrativeAnalysis, Story } from '@/types';
+import { Narrative, NarrativeAnalysis } from '@/types';
 
 interface NarrativeAnalysisRaw {
   narrative_origin: string;
@@ -34,12 +35,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Narrative not found' }, { status: 404 });
   }
 
-  // 3. Find related stories from homepage cache
-  const stories = await getCached<Story[]>('homepage-stories');
-  const relatedStories = (stories || []).slice(0, 10).map((s) => ({
-    slug: s.slug,
-    headline: s.headline,
-  }));
+  // 3. Find related stories via manifest → DynamoDB
+  const manifest = await getCached<string[]>('homepage-manifest');
+  const topSlugs = (manifest || []).slice(0, 10);
+  let relatedStories: { slug: string; headline: string }[] = [];
+  if (topSlugs.length > 0) {
+    const items = await batchGetStories(topSlugs);
+    relatedStories = items.map((s) => ({
+      slug: s.id as string,
+      headline: s.headline as string,
+    }));
+  }
 
   // 4. Send to Sonnet for analysis
   const plainText = narrative.text.replace(/<[^>]*>/g, '');

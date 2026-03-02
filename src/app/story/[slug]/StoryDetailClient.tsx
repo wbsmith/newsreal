@@ -6,7 +6,7 @@ import DisclaimerBanner from '@/components/DisclaimerBanner';
 import BiasTag from '@/components/BiasTag';
 import ManipulationMeter from '@/components/ManipulationMeter';
 import RedactedText from '@/components/RedactedText';
-import ShareButtons from '@/components/ShareButtons';
+import ShareButton from '@/components/ShareButtons';
 import Footer from '@/components/Footer';
 
 interface StoryDetailClientProps {
@@ -14,6 +14,9 @@ interface StoryDetailClientProps {
 }
 
 export default function StoryDetailClient({ story }: StoryDetailClientProps) {
+  const siteUrl = typeof window !== 'undefined' ? window.location.origin : 'https://www.newsreal.ai';
+  const storyUrl = `${siteUrl}/story/${story.slug}`;
+
   return (
     <>
       <Header activeFilter={story.category} onFilterChange={() => {}} />
@@ -35,7 +38,7 @@ export default function StoryDetailClient({ story }: StoryDetailClientProps) {
 
           <ManipulationMeter score={story.manipulationScore} />
 
-          <ShareButtons slug={story.slug} headline={story.headline} />
+          <ShareButton url={storyUrl} title={story.headline} />
 
           <div className="modal-section">
             <div className="modal-section-title">

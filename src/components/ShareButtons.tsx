@@ -1,74 +1,83 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
-interface ShareButtonsProps {
-  slug: string;
-  headline: string;
+interface ShareButtonProps {
+  url: string;
+  title: string;
 }
 
-export default function ShareButtons({ slug, headline }: ShareButtonsProps) {
+export default function ShareButton({ url, title }: ShareButtonProps) {
+  const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
 
-  const siteUrl = typeof window !== 'undefined' ? window.location.origin : 'https://www.newsreal.ai';
-  const storyUrl = `${siteUrl}/story/${slug}`;
-  const shareText = `${headline} — NewsReal.ai`;
+  useEffect(() => {
+    if (!open) return;
+    function handleClickOutside(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function handleEscape(e: KeyboardEvent) {
+      if (e.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [open]);
 
   async function handleCopy() {
     try {
-      await navigator.clipboard.writeText(storyUrl);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(url);
     } catch {
-      // Fallback for older browsers
       const input = document.createElement('input');
-      input.value = storyUrl;
+      input.value = url;
       document.body.appendChild(input);
       input.select();
       document.execCommand('copy');
       document.body.removeChild(input);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
     }
-  }
-
-  function handleTwitter() {
-    const url = `https://x.com/intent/tweet?text=${encodeURIComponent(shareText)}&url=${encodeURIComponent(storyUrl)}`;
-    window.open(url, '_blank', 'noopener,noreferrer,width=550,height=420');
-  }
-
-  function handleReddit() {
-    const url = `https://reddit.com/submit?url=${encodeURIComponent(storyUrl)}&title=${encodeURIComponent(headline)}`;
-    window.open(url, '_blank', 'noopener,noreferrer');
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    setOpen(false);
   }
 
   async function handleNativeShare() {
     if (navigator.share) {
       try {
-        await navigator.share({ title: headline, text: shareText, url: storyUrl });
+        await navigator.share({ title, text: `${title} — NewsReal.ai`, url });
       } catch {
-        // User cancelled — ignore
+        // User cancelled
       }
     }
+    setOpen(false);
   }
 
   const hasNativeShare = typeof navigator !== 'undefined' && !!navigator.share;
 
   return (
-    <div className="share-buttons">
-      <button className="share-btn" onClick={handleCopy}>
-        [{copied ? 'COPIED!' : 'COPY LINK'}]
+    <div className="share-button-wrapper" ref={wrapperRef}>
+      <button
+        className="share-btn"
+        onClick={() => setOpen(!open)}
+      >
+        [{copied ? 'COPIED!' : 'SHARE'}]
       </button>
-      <button className="share-btn" onClick={handleTwitter}>
-        [X/TWITTER]
-      </button>
-      <button className="share-btn" onClick={handleReddit}>
-        [REDDIT]
-      </button>
-      {hasNativeShare && (
-        <button className="share-btn" onClick={handleNativeShare}>
-          [SHARE...]
-        </button>
+      {open && (
+        <div className="share-dropdown">
+          <button className="share-dropdown-item" onClick={handleCopy}>
+            COPY LINK
+          </button>
+          {hasNativeShare && (
+            <button className="share-dropdown-item" onClick={handleNativeShare}>
+              SHARE...
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

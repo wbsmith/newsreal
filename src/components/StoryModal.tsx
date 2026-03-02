@@ -14,28 +14,33 @@ interface StoryModalProps {
 export default function StoryModal({ story, onClose }: StoryModalProps) {
   const siteUrl = typeof window !== 'undefined' ? window.location.origin : 'https://www.newsreal.ai';
 
+  const header = story ? (
+    <>
+      <div className="story-meta">
+        <span className="story-source">{story.source}</span>
+        <span className="story-time">{story.time}</span>
+        <BiasTag tag={story.biasTag} />
+      </div>
+
+      <h2 className="story-headline">{story.headline}</h2>
+      <p className="story-summary" style={{ fontSize: '17px', marginTop: '8px' }}>
+        {story.summary}
+      </p>
+
+      <ManipulationMeter score={story.manipulationScore} />
+    </>
+  ) : undefined;
+
   return (
     <AnalysisModal
       open={!!story}
       onClose={onClose}
       shareUrl={story ? `${siteUrl}/story/${story.slug}` : undefined}
       shareTitle={story?.headline}
+      header={header}
     >
       {story && (
         <>
-          <div className="story-meta">
-            <span className="story-source">{story.source}</span>
-            <span className="story-time">{story.time}</span>
-            <BiasTag tag={story.biasTag} />
-          </div>
-
-          <h2 className="story-headline">{story.headline}</h2>
-          <p className="story-summary" style={{ fontSize: '17px', marginTop: '8px' }}>
-            {story.summary}
-          </p>
-
-          <ManipulationMeter score={story.manipulationScore} />
-
           <div className="modal-section">
             <div className="modal-section-title">
               {'\u25C8'} AI DEEP ANALYSIS <span className="blink">{'\u258A'}</span>

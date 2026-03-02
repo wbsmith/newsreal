@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import Image from 'next/image';
 
 interface ShareButtonProps {
   url: string;
@@ -20,13 +21,16 @@ export default function ShareButton({ url, title }: ShareButtonProps) {
       }
     }
     function handleEscape(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setOpen(false);
+      }
     }
     document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
+    document.addEventListener('keydown', handleEscape, true);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener('keydown', handleEscape, true);
     };
   }, [open]);
 
@@ -62,10 +66,18 @@ export default function ShareButton({ url, title }: ShareButtonProps) {
   return (
     <div className="share-button-wrapper" ref={wrapperRef}>
       <button
-        className="share-btn"
+        className="share-btn share-btn-icon"
         onClick={() => setOpen(!open)}
+        title={copied ? 'Copied!' : 'Share'}
       >
-        [{copied ? 'COPIED!' : 'SHARE'}]
+        <Image
+          src="/icon.png"
+          alt=""
+          width={24}
+          height={24}
+          className="share-icon"
+        />
+        <span>{copied ? 'COPIED!' : 'SHARE'}</span>
       </button>
       {open && (
         <div className="share-dropdown">

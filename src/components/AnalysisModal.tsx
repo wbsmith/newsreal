@@ -13,6 +13,7 @@ interface AnalysisModalProps {
   shareUrl?: string;
   shareTitle?: string;
   disclaimer?: string;
+  header?: ReactNode;
   children?: ReactNode;
 }
 
@@ -26,6 +27,7 @@ export default function AnalysisModal({
   shareUrl,
   shareTitle,
   disclaimer = 'This analysis is AI-generated speculation. Verify all claims independently. Trust no single source \u2014 including us.',
+  header,
   children,
 }: AnalysisModalProps) {
   const handleKeyDown = useCallback(
@@ -93,27 +95,31 @@ export default function AnalysisModal({
           </div>
         )}
 
-        {!loading && !error && children}
-
-        {!loading && !error && shareUrl && shareTitle && (
-          <ShareButton url={shareUrl} title={shareTitle} />
-        )}
-
         {!loading && !error && (
-          <div className="modal-section" style={{ textAlign: 'center' }}>
-            <p
-              style={{
-                fontFamily: 'var(--font-mono)',
-                fontSize: '10px',
-                letterSpacing: '1.5px',
-                color: 'var(--text-muted)',
-                textTransform: 'uppercase',
-                marginTop: '16px',
-              }}
-            >
-              {'\u26A0'} {disclaimer}
-            </p>
-          </div>
+          <>
+            {header}
+
+            {shareUrl && shareTitle && (
+              <ShareButton url={shareUrl} title={shareTitle} />
+            )}
+
+            {children}
+
+            <div className="modal-section" style={{ textAlign: 'center' }}>
+              <p
+                style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '10px',
+                  letterSpacing: '1.5px',
+                  color: 'var(--text-muted)',
+                  textTransform: 'uppercase',
+                  marginTop: '16px',
+                }}
+              >
+                {'\u26A0'} {disclaimer}
+              </p>
+            </div>
+          </>
         )}
       </div>
     </div>

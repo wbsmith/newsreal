@@ -26,6 +26,19 @@ export interface DeepDive {
   whatsHidden: string;
 }
 
+export interface ManipulationSubScore {
+  score: number;
+  reason: string;
+}
+
+export interface ManipulationBreakdown {
+  emotional_manipulation: ManipulationSubScore;
+  source_transparency: ManipulationSubScore;
+  framing_bias: ManipulationSubScore;
+  selective_omission: ManipulationSubScore;
+  headline_accuracy: ManipulationSubScore;
+}
+
 export interface Story {
   id: number;
   slug: string;
@@ -38,6 +51,8 @@ export interface Story {
   summary: string;
   biasTag: StoryBiasTag;
   manipulationScore: number;
+  manipulationBreakdown?: ManipulationBreakdown;
+  hasFullText?: boolean;
   realAnalysis: string;
   deepDive: DeepDive;
 }
@@ -72,10 +87,18 @@ export interface Obfuscation {
   sourceUrl?: string;
 }
 
+export interface CoherenceBreakdown {
+  lexical_alignment: number;
+  frame_uniformity: number;
+  source_convergence: number;
+  counter_narrative_absence: number;
+}
+
 export interface Narrative {
   text: string;
   heat: string;
   coherenceScore?: number;
+  coherenceBreakdown?: CoherenceBreakdown;
   outletsInvolved?: string[];
   slug?: string;
 }

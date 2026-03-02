@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
+import Link from 'next/link';
 import CategoryNav from './CategoryNav';
 
 interface HeaderProps {
@@ -33,14 +34,16 @@ export default function Header({ activeFilter, onFilterChange }: HeaderProps) {
         </div>
       </div>
       <div className="header-main">
-        <Image
-          src="/logo-compact.svg"
-          alt="NewsReal.ai"
-          width={360}
-          height={64}
-          priority
-          style={{ margin: '0 auto' }}
-        />
+        <Link href="/">
+          <Image
+            src="/logo-compact.svg"
+            alt="NewsReal.ai"
+            width={360}
+            height={64}
+            priority
+            style={{ margin: '0 auto' }}
+          />
+        </Link>
       </div>
       <CategoryNav activeFilter={activeFilter} onFilterChange={onFilterChange} />
     </header>

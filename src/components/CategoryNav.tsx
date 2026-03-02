@@ -1,5 +1,7 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
+
 const CATEGORIES = [
   { label: 'All Stories', filter: 'all' },
   { label: 'Politics', filter: 'politics' },
@@ -16,16 +18,29 @@ interface CategoryNavProps {
 }
 
 export default function CategoryNav({ activeFilter, onFilterChange }: CategoryNavProps) {
+  const pathname = usePathname();
+  const isHomepage = pathname === '/';
+
   return (
     <nav className="header-nav">
       {CATEGORIES.map((cat) => (
-        <button
-          key={cat.filter}
-          className={activeFilter === cat.filter ? 'active' : ''}
-          onClick={() => onFilterChange(cat.filter)}
-        >
-          {cat.label}
-        </button>
+        isHomepage ? (
+          <button
+            key={cat.filter}
+            className={activeFilter === cat.filter ? 'active' : ''}
+            onClick={() => onFilterChange(cat.filter)}
+          >
+            {cat.label}
+          </button>
+        ) : (
+          <a
+            key={cat.filter}
+            href={cat.filter === 'all' ? '/' : `/?category=${cat.filter}`}
+            className={activeFilter === cat.filter ? 'active' : ''}
+          >
+            {cat.label}
+          </a>
+        )
       ))}
     </nav>
   );

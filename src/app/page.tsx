@@ -20,7 +20,12 @@ export default function Home() {
   const narrativeRef = useRef<NarrativeTrackerHandle>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMsg, setLoadingMsg] = useState(LOADING_MESSAGES[0]);
-  const [activeFilter, setActiveFilter] = useState('all');
+  const [activeFilter, setActiveFilter] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('category') || 'all';
+    }
+    return 'all';
+  });
   const [selectedStory, setSelectedStory] = useState<Story | null>(null);
 
   // Data state — empty until API responds

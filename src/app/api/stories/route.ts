@@ -14,7 +14,7 @@ export async function GET(request: Request) {
   let suppressedSearches: string[] | null = null;
   let source: 'live' | 'db' = 'db';
 
-  // Try 1: DynamoDB cache — all reads in parallel to stay within Amplify timeout
+  // Read all cache keys in parallel — sidebar data is independent of stories
   try {
     const [cachedStories, cachedNarratives, cachedObfuscations, cachedTicker, cachedSuppressed] =
       await Promise.all([
@@ -27,20 +27,21 @@ export async function GET(request: Request) {
 
     if (cachedStories && cachedStories.length > 0) {
       stories = cachedStories;
-      narratives = cachedNarratives;
-      obfuscations = cachedObfuscations;
-      tickerItems = cachedTicker;
-      suppressedSearches = cachedSuppressed;
       source = 'live';
     }
+    // Always use sidebar data if available, even if stories cache missed
+    narratives = cachedNarratives;
+    obfuscations = cachedObfuscations;
+    tickerItems = cachedTicker;
+    suppressedSearches = cachedSuppressed;
   } catch {
     // Cache miss or error — continue to fallback
   }
 
-  // Try 2: DynamoDB scan
+  // Fallback: DynamoDB scan for stories only
   if (!stories || stories.length === 0) {
     try {
-      const dbStories = await getRecentStories(30);
+      const dbStories = await getRecentStories(120);
       if (dbStories && dbStories.length > 0) {
         stories = dbStories as unknown as Story[];
         source = 'db';
@@ -50,7 +51,6 @@ export async function GET(request: Request) {
     }
   }
 
-  // No data available — return empty
   if (!stories) {
     stories = [];
   }

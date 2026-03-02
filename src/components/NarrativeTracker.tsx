@@ -10,10 +10,11 @@ export interface NarrativeTrackerHandle {
 
 interface NarrativeTrackerProps {
   narratives: Narrative[];
+  preloadedAnalyses?: NarrativeAnalysis[];
 }
 
 const NarrativeTracker = forwardRef<NarrativeTrackerHandle, NarrativeTrackerProps>(
-  function NarrativeTracker({ narratives }, ref) {
+  function NarrativeTracker({ narratives, preloadedAnalyses }, ref) {
   const [analysis, setAnalysis] = useState<NarrativeAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,10 +22,19 @@ const NarrativeTracker = forwardRef<NarrativeTrackerHandle, NarrativeTrackerProp
 
   async function fetchNarrativeAnalysis(slug: string) {
     setActiveSlug(slug);
-    setLoading(true);
     setError(null);
-    setAnalysis(null);
 
+    // Check preloaded analyses first (instant)
+    const preloaded = preloadedAnalyses?.find((a) => a.slug === slug);
+    if (preloaded) {
+      setAnalysis(preloaded);
+      setLoading(false);
+      return;
+    }
+
+    // Fall back to API
+    setLoading(true);
+    setAnalysis(null);
     try {
       const res = await fetch(`/api/narrative?slug=${encodeURIComponent(slug)}`);
       if (!res.ok) {

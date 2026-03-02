@@ -690,6 +690,33 @@ a { color: inherit; text-decoration: none; }
   margin-top: 6px;
 }
 
+.obfuscation-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.source-link-tag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--accent-cyan);
+  border: 1px solid rgba(0, 188, 212, 0.3);
+  padding: 2px 8px;
+  border-radius: 2px;
+  text-decoration: none;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+
+.source-link-tag:hover {
+  background: rgba(0, 188, 212, 0.1);
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 8px rgba(0, 188, 212, 0.2);
+}
+
 /* ═══════════════════ EXPANDED STORY MODAL ═══════════════════ */
 .modal-overlay {
   position: fixed;

@@ -98,7 +98,7 @@ export default function StoryModal({ story, onClose }: StoryModalProps) {
             </>
           )}
 
-          <div className="modal-section" style={{ textAlign: 'center' }}>
+          <div className="modal-section" style={{ textAlign: 'center', display: 'flex', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
             <a
               href={`/story/${story.slug}`}
               className="dossier-link"
@@ -106,6 +106,17 @@ export default function StoryModal({ story, onClose }: StoryModalProps) {
             >
               [VIEW FULL DOSSIER]
             </a>
+            {story.sourceUrl && (
+              <a
+                href={story.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="dossier-link"
+                onClick={(e) => e.stopPropagation()}
+              >
+                [READ ORIGINAL {'\u2192'} {story.source}]
+              </a>
+            )}
           </div>
         </>
       )}

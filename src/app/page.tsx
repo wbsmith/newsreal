@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { Story, Narrative, Obfuscation, TickerItem } from '@/types';
+import { Story, Narrative, Obfuscation, TickerItem, NarrativeAnalysis, SuppressedSearchEntry } from '@/types';
 import { LOADING_MESSAGES } from '@/lib/loading-messages';
 import Header from '@/components/Header';
 import DisclaimerBanner from '@/components/DisclaimerBanner';
@@ -29,6 +29,8 @@ export default function Home() {
   const [obfuscations, setObfuscations] = useState<Obfuscation[]>([]);
   const [tickerItems, setTickerItems] = useState<TickerItem[]>([]);
   const [suppressedSearches, setSuppressedSearches] = useState<string[]>([]);
+  const [narrativeAnalyses, setNarrativeAnalyses] = useState<NarrativeAnalysis[]>([]);
+  const [searchAnalyses, setSearchAnalyses] = useState<SuppressedSearchEntry[]>([]);
 
   // Loading sequence + API fetch
   useEffect(() => {
@@ -47,6 +49,8 @@ export default function Home() {
         if (data.obfuscations?.length > 0) setObfuscations(data.obfuscations);
         if (data.ticker?.length > 0) setTickerItems(data.ticker);
         if (data.suppressedSearches?.length > 0) setSuppressedSearches(data.suppressedSearches);
+        if (data.narrativeAnalyses?.length > 0) setNarrativeAnalyses(data.narrativeAnalyses);
+        if (data.searchAnalyses?.length > 0) setSearchAnalyses(data.searchAnalyses);
       })
       .catch(() => {
         // API unavailable — sections will show empty state
@@ -121,9 +125,9 @@ export default function Home() {
             />
           </div>
           <aside className="sidebar">
-            <NarrativeTracker ref={narrativeRef} narratives={narratives} />
+            <NarrativeTracker ref={narrativeRef} narratives={narratives} preloadedAnalyses={narrativeAnalyses} />
             <ObfuscationIndex obfuscations={obfuscations} />
-            <SuppressedSearches searches={suppressedSearches} />
+            <SuppressedSearches searches={suppressedSearches} preloadedAnalyses={searchAnalyses} />
           </aside>
         </div>
       </main>

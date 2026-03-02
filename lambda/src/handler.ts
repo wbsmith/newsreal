@@ -90,9 +90,25 @@ interface Story {
   deepDive: DeepDive;
 }
 
-interface Narrative { text: string; heat: string; coherenceScore?: number; outletsInvolved?: string[]; slug?: string; }
-interface Obfuscation { category: string; whatHappened: string; whyItMatters: string; whatsCoveringIt: string; whoBenefits: string; detectionConfidence: number; sourceUrl?: string; }
+interface SourceArticle { slug: string; headline: string; sourceUrl: string; }
+interface Narrative { text: string; heat: string; coherenceScore?: number; outletsInvolved?: string[]; slug?: string; relatedStories?: SourceArticle[]; }
+interface Obfuscation { category: string; whatHappened: string; whyItMatters: string; whatsCoveringIt: string; whoBenefits: string; detectionConfidence: number; sourceUrl?: string; relatedStories?: SourceArticle[]; }
 interface TickerItem { text: string; severity: 'high' | 'med' | 'low'; linkType?: 'story' | 'narrative'; linkRef?: string; }
+
+interface NarrativeAnalysis {
+  slug: string; narrativeText: string; coherenceScore: number; outletsInvolved: string[];
+  analysisDate: string; narrativeOrigin: string; coordinationEvidence: string;
+  whoBenefits: string; suppressedAlternative: string; relatedStories: SourceArticle[];
+}
+
+interface SearchAnalysis {
+  query: string; resultCount: number; analysisDate: string;
+  mediaPattern: string; whatsRevealed: string; whatsMissing: string;
+  connectionMap: string; whyItsSuppressed: string;
+  searchResults: { title: string; source: string; link: string; snippet: string }[];
+}
+
+interface SuppressedSearchEntry { query: string; analysis: SearchAnalysis | null; }
 
 // ─── Config ───
 
@@ -696,12 +712,12 @@ GENERATE THE FOLLOWING (respond in JSON):
   };
 }
 
-function buildObfuscationPrompt(headlines: string): { system: string; user: string } {
+function buildObfuscationPrompt(storyList: string): { system: string; user: string } {
   return {
     system: `You are the NewsReal.ai Obfuscation Detector. Your job is to identify stories that are being BURIED by the current news cycle. Respond ONLY in valid JSON.`,
     user: `INPUTS:
-- Today's top headlines across all major outlets:
-${headlines}
+- Today's top stories across all major outlets:
+${storyList}
 
 - Today's Federal Register filings: Not available this cycle
 - Today's congressional actions: Not available this cycle
@@ -711,6 +727,8 @@ ${headlines}
 
 TASK:
 Identify 3-5 government/regulatory actions that likely received ZERO or minimal mainstream coverage today. For each, explain what happened, why it matters, what dominated the news instead, who benefits, and your confidence level. Speculate boldly based on patterns you know about — timing of filings, typical regulatory behavior, and what types of actions get buried during big news cycles.
+
+For each obfuscation, include "covering_story_slugs" — slugs from the story list above that are dominating the news cycle and covering up this action.
 
 Respond in JSON:
 {
@@ -722,19 +740,20 @@ Respond in JSON:
       "whats_covering_it": "<what dominated the news instead>",
       "who_benefits": "<who benefits from no coverage>",
       "detection_confidence": <0-100>,
-      "source_url": ""
+      "source_url": "",
+      "covering_story_slugs": ["slug1", "slug2"]
     }
   ]
 }`,
   };
 }
 
-function buildNarrativePrompt(headlines: string): { system: string; user: string } {
+function buildNarrativePrompt(storyList: string): { system: string; user: string } {
   return {
     system: `You are the NewsReal.ai Narrative Tracker. You detect coordinated messaging patterns across media outlets. Respond ONLY in valid JSON.`,
-    user: `Analyze the following headlines from the past 6 hours across all major outlets.
+    user: `Analyze the following stories from the past 6 hours across all major outlets.
 
-${headlines}
+${storyList}
 
 Identify dominant narrative patterns. For each, score coherence using this rubric — score each dimension independently (0-25), then sum for the total (0-100).
 
@@ -759,6 +778,8 @@ COHERENCE RUBRIC:
    9-16: Some dissent but minority position.
    17-25: Near-total uniformity, no major outlet breaking ranks.
 
+For each narrative, include "related_story_slugs" — an array of slug values from the story list above that are most relevant to this narrative pattern.
+
 Respond in JSON:
 {
   "narratives": [
@@ -771,7 +792,8 @@ Respond in JSON:
         "source_convergence": <0-25>,
         "counter_narrative_absence": <0-25>
       },
-      "outlets_involved": ["outlet1", "outlet2"]
+      "outlets_involved": ["outlet1", "outlet2"],
+      "related_story_slugs": ["slug1", "slug2"]
     }
   ]
 }
@@ -977,11 +999,18 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
 
   // Step 7: Sidebar data
   console.log('Step 7: Generating sidebar data...');
-  const headlines = sorted.slice(0, 20).map((c) => `[${c.item.source}] ${c.item.title}`);
-  const headlineText = headlines.map((h, i) => `${i + 1}. ${h}`).join('\n');
+  const storyBySlug = new Map(stories.map(s => [s.slug, s]));
+  function resolveSlugs(slugs: string[]): SourceArticle[] {
+    return slugs.map(sl => storyBySlug.get(sl)).filter(Boolean)
+      .map(s => ({ slug: s!.slug, headline: s!.headline, sourceUrl: s!.sourceUrl }));
+  }
 
-  const obfuscationPrompt = buildObfuscationPrompt(headlineText);
-  const narrativePrompt = buildNarrativePrompt(headlineText);
+  const storyListForPrompt = stories.slice(0, 30).map((s, i) =>
+    `${i + 1}. [${s.source}] "${s.headline}" (slug: ${s.slug})`
+  ).join('\n');
+
+  const obfuscationPrompt = buildObfuscationPrompt(storyListForPrompt);
+  const narrativePrompt = buildNarrativePrompt(storyListForPrompt);
 
   const [obfuscationsRaw, narrativesRaw] = await Promise.all([
     analyzeWithSonnet(obfuscationPrompt.system, obfuscationPrompt.user),
@@ -996,6 +1025,7 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
       category: o.category, whatHappened: o.what_happened, whyItMatters: o.why_it_matters,
       whatsCoveringIt: o.whats_covering_it, whoBenefits: o.who_benefits,
       detectionConfidence: o.detection_confidence, sourceUrl: o.source_url || undefined,
+      relatedStories: resolveSlugs(o.covering_story_slugs || []),
     }));
   })();
 
@@ -1009,6 +1039,7 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
       coherenceBreakdown: n.coherence_breakdown || undefined,
       outletsInvolved: n.outlets_involved,
       slug: slugify(String(n.narrative_text).replace(/<[^>]*>/g, '')),
+      relatedStories: resolveSlugs(n.related_story_slugs || []),
     }));
   })();
 
@@ -1056,6 +1087,144 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
   stats.suppressedSearches = suppressedSearches.length;
   console.log(`  Sidebar: ${obfuscations.length} obfuscations, ${narratives.length} narratives, ${tickerItems.length} ticker, ${suppressedSearches.length} suppressed`);
 
+  // Step 7b: Precompute narrative analyses (parallel Sonnet calls)
+  console.log('Step 7b: Precomputing narrative analyses...');
+  const narrativeAnalyses: NarrativeAnalysis[] = [];
+  if (narratives.length > 0) {
+    const naStart = Date.now();
+    const naResults = await Promise.allSettled(narratives.map(async (n) => {
+      if (!n.slug) return null;
+      const plainText = n.text.replace(/<[^>]*>/g, '');
+      const relatedForPrompt = (n.relatedStories || []).map((s, i) =>
+        `${i + 1}. [${s.sourceUrl ? new URL(s.sourceUrl).hostname.replace('www.', '') : 'unknown'}] ${s.headline}`
+      ).join('\n') || 'None identified';
+
+      const naSystem = `You are the NewsReal.ai analysis engine. Your job is to generate provocative, attention-grabbing media criticism. Be equally skeptical of all political sides. Always follow the money. Be direct. Be bold. Respond ONLY in valid JSON. No markdown, no commentary.`;
+      const naUser = `A NewsReal.ai user clicked on a detected narrative pattern to get a deep analysis. Analyze this coordinated messaging pattern.
+
+NARRATIVE: "${plainText}"
+COHERENCE SCORE: ${n.coherenceScore || 0}/100
+OUTLETS INVOLVED: ${(n.outletsInvolved || []).join(', ') || 'Unknown'}
+RELATED STORIES FROM TODAY:
+${relatedForPrompt}
+
+Analyze this narrative pattern deeply. Who originated it? What evidence of coordination exists? Who benefits from this framing? What alternative framing is being suppressed?
+
+Respond in JSON:
+{
+  "narrative_origin": "<Where did this narrative originate? PR firms, think tanks, government press offices, wire services? Trace the likely chain of messaging. Be specific about entities, dates, and documented coordination patterns.>",
+  "coordination_evidence": "<What specific evidence points to coordinated messaging? Identical phrases, synchronized timing, shared sources? Compare outlet-by-outlet. Name the specific language patterns.>",
+  "who_benefits": "<Who specifically benefits from this narrative frame? Name names, companies, politicians, PACs. Follow the money. What dollar amounts are at stake? What policy outcomes does this narrative support?>",
+  "suppressed_alternative": "<What alternative framing is being suppressed? What questions aren't being asked? What connections aren't being drawn? What would the story look like if covered without this narrative frame?>"
+}`;
+
+      const raw = await analyzeWithSonnet(naSystem, naUser);
+      if (!raw) return null;
+      const parsed = parseClaudeJSON<{ narrative_origin: string; coordination_evidence: string; who_benefits: string; suppressed_alternative: string }>(raw);
+      if (!parsed) return null;
+
+      return {
+        slug: n.slug,
+        narrativeText: n.text,
+        coherenceScore: n.coherenceScore || 0,
+        outletsInvolved: n.outletsInvolved || [],
+        analysisDate: new Date().toISOString(),
+        narrativeOrigin: parsed.narrative_origin,
+        coordinationEvidence: parsed.coordination_evidence,
+        whoBenefits: parsed.who_benefits,
+        suppressedAlternative: parsed.suppressed_alternative,
+        relatedStories: n.relatedStories || [],
+      } as NarrativeAnalysis;
+    }));
+
+    for (const r of naResults) {
+      if (r.status === 'fulfilled' && r.value) narrativeAnalyses.push(r.value);
+    }
+    const naDuration = ((Date.now() - naStart) / 1000).toFixed(1);
+    console.log(`  Precomputed ${narrativeAnalyses.length}/${narratives.length} narrative analyses in ${naDuration}s`);
+  }
+  stats.narrativeAnalyses = narrativeAnalyses.length;
+
+  // Step 7c: Precompute search analyses (RSS + Sonnet per query)
+  console.log('Step 7c: Precomputing search analyses...');
+  const searchAnalyses: SuppressedSearchEntry[] = [];
+  if (suppressedSearches.length > 0) {
+    const saStart = Date.now();
+    // Batch 4 concurrent to avoid RSS rate limits
+    for (let i = 0; i < suppressedSearches.length; i += 4) {
+      const batch = suppressedSearches.slice(i, i + 4);
+      const batchResults = await Promise.allSettled(batch.map(async (query) => {
+        // Fetch Google News RSS
+        const rssUrl = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
+        let feedItems: FeedItem[] = [];
+        try {
+          feedItems = await fetchFeed(rssUrl, 'Google News');
+        } catch (err) {
+          console.error(`  RSS fetch failed for "${query}":`, err instanceof Error ? err.message : err);
+          return { query, analysis: null } as SuppressedSearchEntry;
+        }
+
+        if (feedItems.length === 0) {
+          return { query, analysis: null } as SuppressedSearchEntry;
+        }
+
+        const topResults = feedItems.slice(0, 15).map((item) => ({
+          title: item.title, source: item.source, link: item.link,
+          snippet: item.contentSnippet || item.content || '',
+        }));
+
+        const formattedResults = topResults.map((r, idx) =>
+          `${idx + 1}. [${r.source}] ${r.title}\n   ${r.snippet}`
+        ).join('\n\n');
+
+        const saSystem = `You are the NewsReal.ai analysis engine. Your job is to generate provocative, attention-grabbing media criticism. Be equally skeptical of all political sides. Always follow the money. Be direct. Be bold. Respond ONLY in valid JSON. No markdown, no commentary.`;
+        const saUser = `A NewsReal.ai user clicked on a "suppressed search" query. Your job is to analyze the search results and expose the patterns in how media is (or isn't) covering this topic.
+
+SEARCH QUERY: "${query}"
+
+GOOGLE NEWS RESULTS (${topResults.length} found):
+${formattedResults}
+
+Analyze these results as a group. Look at WHO is covering this, HOW they're framing it, what's CONSPICUOUSLY ABSENT, and what money/power connections explain the coverage pattern.
+
+Respond in JSON:
+{
+  "media_pattern": "<How is media covering (or not covering) this topic? Which outlets appear? Which are suspiciously absent? What framing dominates? Is coverage coordinated or fragmented? Be specific about outlet names and their angles.>",
+  "whats_revealed": "<What do these search results actually tell us when read between the lines? What patterns emerge? What admissions are buried in paragraph 12? What numbers don't add up? Be provocative and specific.>",
+  "whats_missing": "<What is CONSPICUOUSLY absent from these results? What obvious questions aren't being asked? What entities/people/money flows are never mentioned? What related stories are being ignored? This is often more important than what's present.>",
+  "connection_map": "<Follow the money. Connect this topic to specific lobbying firms, PACs, campaign contributions, government contracts, revolving-door appointments, or regulatory actions. Name names and dollar amounts (speculative is fine). Draw the web of incentives.>",
+  "why_its_suppressed": "<Why would this search query be something most people aren't searching for? Who benefits from public ignorance on this topic? What institutional incentives exist to keep this out of mainstream discourse? Be bold.>"
+}`;
+
+        const raw = await analyzeWithSonnet(saSystem, saUser);
+        if (!raw) return { query, analysis: null } as SuppressedSearchEntry;
+        const parsed = parseClaudeJSON<{
+          media_pattern: string; whats_revealed: string; whats_missing: string;
+          connection_map: string; why_its_suppressed: string;
+        }>(raw);
+        if (!parsed) return { query, analysis: null } as SuppressedSearchEntry;
+
+        return {
+          query,
+          analysis: {
+            query, resultCount: feedItems.length, analysisDate: new Date().toISOString(),
+            mediaPattern: parsed.media_pattern, whatsRevealed: parsed.whats_revealed,
+            whatsMissing: parsed.whats_missing, connectionMap: parsed.connection_map,
+            whyItsSuppressed: parsed.why_its_suppressed, searchResults: topResults,
+          },
+        } as SuppressedSearchEntry;
+      }));
+
+      for (const r of batchResults) {
+        if (r.status === 'fulfilled' && r.value) searchAnalyses.push(r.value);
+      }
+    }
+    const saDuration = ((Date.now() - saStart) / 1000).toFixed(1);
+    const succeeded = searchAnalyses.filter(e => e.analysis).length;
+    console.log(`  Precomputed ${succeeded}/${suppressedSearches.length} search analyses in ${saDuration}s`);
+  }
+  stats.searchAnalyses = searchAnalyses.filter(e => e.analysis).length;
+
   // Step 8: Store each story individually in DynamoDB
   console.log('Step 8: Storing stories to DynamoDB...');
   const publishedAt = new Date().toISOString();
@@ -1069,21 +1238,41 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
   stats.stored = stored;
   console.log(`  Stored ${stored}/${stories.length} stories${failed ? ` (${failed} failed)` : ''}`);
 
-  // Step 9: Cache manifest (ordered slug list) + sidebar data
-  console.log('Step 9: Caching manifest + sidebar data...');
+  // Step 9: Cache manifest + sidebar + precomputed analyses
+  console.log('Step 9: Caching manifest + sidebar + analyses...');
   const manifest = stories.map((s) => s.slug);
-  const cacheResults = await Promise.allSettled([
+  const bulkCacheOps: Promise<void>[] = [
     setCached('homepage-manifest', manifest, CACHE_TTL),
     setCached('homepage-narratives', narratives, CACHE_TTL),
     setCached('homepage-obfuscations', obfuscations, CACHE_TTL),
     setCached('homepage-ticker', tickerItems, CACHE_TTL),
     setCached('homepage-suppressed', suppressedSearches, CACHE_TTL),
+    setCached('homepage-narrative-analyses', narrativeAnalyses, CACHE_TTL),
+    setCached('homepage-search-analyses', searchAnalyses, CACHE_TTL),
     setCached('pipeline-last-run', Date.now(), CACHE_TTL),
-  ]);
-  const cacheKeys = ['homepage-manifest', 'homepage-narratives', 'homepage-obfuscations', 'homepage-ticker', 'homepage-suppressed', 'pipeline-last-run'];
+  ];
+  const bulkCacheKeys = ['homepage-manifest', 'homepage-narratives', 'homepage-obfuscations', 'homepage-ticker', 'homepage-suppressed', 'homepage-narrative-analyses', 'homepage-search-analyses', 'pipeline-last-run'];
+
+  // Individual narrative analysis cache entries
+  for (const na of narrativeAnalyses) {
+    bulkCacheOps.push(setCached(`narrative-analysis:${na.slug}`, na, CACHE_TTL));
+    bulkCacheKeys.push(`narrative-analysis:${na.slug}`);
+  }
+
+  // Individual search analysis cache entries
+  for (const se of searchAnalyses) {
+    if (se.analysis) {
+      bulkCacheOps.push(setCached(`suppressed-search:${se.query}`, se.analysis, CACHE_TTL));
+      bulkCacheKeys.push(`suppressed-search:${se.query}`);
+    }
+  }
+
+  const cacheResults = await Promise.allSettled(bulkCacheOps);
   cacheResults.forEach((r, i) => {
-    if (r.status === 'rejected') console.error(`  Cache write FAILED for ${cacheKeys[i]}: ${r.reason}`);
+    if (r.status === 'rejected') console.error(`  Cache write FAILED for ${bulkCacheKeys[i]}: ${r.reason}`);
   });
+  const cacheFailed = cacheResults.filter(r => r.status === 'rejected').length;
+  console.log(`  Cached ${cacheResults.length - cacheFailed}/${cacheResults.length} entries${cacheFailed ? ` (${cacheFailed} failed)` : ''}`);
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
   stats.duration = `${duration}s`;

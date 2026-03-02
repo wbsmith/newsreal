@@ -1,14 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { SearchAnalysis } from '@/types';
+import { SearchAnalysis, SuppressedSearchEntry } from '@/types';
 import SearchAnalysisModal from './SearchAnalysisModal';
 
 interface SuppressedSearchesProps {
   searches: string[];
+  preloadedAnalyses?: SuppressedSearchEntry[];
 }
 
-export default function SuppressedSearches({ searches }: SuppressedSearchesProps) {
+export default function SuppressedSearches({ searches, preloadedAnalyses }: SuppressedSearchesProps) {
   const [analysis, setAnalysis] = useState<SearchAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -16,10 +17,19 @@ export default function SuppressedSearches({ searches }: SuppressedSearchesProps
 
   async function handleSearch(query: string) {
     setActiveQuery(query);
-    setLoading(true);
     setError(null);
-    setAnalysis(null);
 
+    // Check preloaded analyses first (instant)
+    const preloaded = preloadedAnalyses?.find((e) => e.query === query);
+    if (preloaded?.analysis) {
+      setAnalysis(preloaded.analysis);
+      setLoading(false);
+      return;
+    }
+
+    // Fall back to API
+    setLoading(true);
+    setAnalysis(null);
     try {
       const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
       if (!res.ok) {

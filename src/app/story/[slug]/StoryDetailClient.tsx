@@ -40,6 +40,19 @@ export default function StoryDetailClient({ story }: StoryDetailClientProps) {
 
           <ShareButton url={storyUrl} title={story.headline} />
 
+          {story.sourceUrl && (
+            <div style={{ marginTop: '12px', marginBottom: '8px' }}>
+              <a
+                href={story.sourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="dossier-link"
+              >
+                [READ ORIGINAL {'\u2192'} {story.source}]
+              </a>
+            </div>
+          )}
+
           <div className="modal-section">
             <div className="modal-section-title">
               {'\u25C8'} AI DEEP ANALYSIS <span className="blink">{'\u258A'}</span>

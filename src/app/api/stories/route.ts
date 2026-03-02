@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getCached } from '@/lib/cache';
 import { batchGetStories, getRecentStories } from '@/lib/db';
-import { Story, Narrative, Obfuscation, TickerItem } from '@/types';
+import { Story, Narrative, Obfuscation, TickerItem, NarrativeAnalysis, SuppressedSearchEntry } from '@/types';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -12,22 +12,28 @@ export async function GET(request: Request) {
   let obfuscations: Obfuscation[] = [];
   let tickerItems: TickerItem[] = [];
   let suppressedSearches: string[] = [];
+  let narrativeAnalyses: NarrativeAnalysis[] = [];
+  let searchAnalyses: SuppressedSearchEntry[] = [];
   let source: 'manifest' | 'db' = 'db';
 
-  // Read manifest + sidebar data from cache in parallel
-  const [manifest, cachedNarratives, cachedObfuscations, cachedTicker, cachedSuppressed] =
+  // Read manifest + sidebar data + precomputed analyses from cache in parallel
+  const [manifest, cachedNarratives, cachedObfuscations, cachedTicker, cachedSuppressed, cachedNarrativeAnalyses, cachedSearchAnalyses] =
     await Promise.all([
       getCached<string[]>('homepage-manifest').catch(() => null),
       getCached<Narrative[]>('homepage-narratives').catch(() => null),
       getCached<Obfuscation[]>('homepage-obfuscations').catch(() => null),
       getCached<TickerItem[]>('homepage-ticker').catch(() => null),
       getCached<string[]>('homepage-suppressed').catch(() => null),
+      getCached<NarrativeAnalysis[]>('homepage-narrative-analyses').catch(() => null),
+      getCached<SuppressedSearchEntry[]>('homepage-search-analyses').catch(() => null),
     ]);
 
   if (cachedNarratives) narratives = cachedNarratives;
   if (cachedObfuscations) obfuscations = cachedObfuscations;
   if (cachedTicker) tickerItems = cachedTicker;
   if (cachedSuppressed) suppressedSearches = cachedSuppressed;
+  if (cachedNarrativeAnalyses) narrativeAnalyses = cachedNarrativeAnalyses;
+  if (cachedSearchAnalyses) searchAnalyses = cachedSearchAnalyses;
 
   // Primary path: manifest (ordered slug list) → batch get full stories from DynamoDB
   if (manifest && manifest.length > 0) {
@@ -68,6 +74,8 @@ export async function GET(request: Request) {
     obfuscations,
     ticker: tickerItems,
     suppressedSearches,
+    narrativeAnalyses,
+    searchAnalyses,
     source,
   });
 }

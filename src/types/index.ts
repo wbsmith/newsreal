@@ -77,6 +77,12 @@ export interface Analysis {
   completionTokens: number;
 }
 
+export interface SourceArticle {
+  slug: string;
+  headline: string;
+  sourceUrl: string;
+}
+
 export interface Obfuscation {
   category: string;
   whatHappened: string;
@@ -85,6 +91,7 @@ export interface Obfuscation {
   whoBenefits: string;
   detectionConfidence: number;
   sourceUrl?: string;
+  relatedStories?: SourceArticle[];
 }
 
 export interface CoherenceBreakdown {
@@ -101,6 +108,7 @@ export interface Narrative {
   coherenceBreakdown?: CoherenceBreakdown;
   outletsInvolved?: string[];
   slug?: string;
+  relatedStories?: SourceArticle[];
 }
 
 export interface NarrativeAnalysis {
@@ -113,7 +121,7 @@ export interface NarrativeAnalysis {
   coordinationEvidence: string;
   whoBenefits: string;
   suppressedAlternative: string;
-  relatedStories: { slug: string; headline: string }[];
+  relatedStories: SourceArticle[];
 }
 
 export interface SuppressedSearch {
@@ -130,6 +138,11 @@ export interface SearchAnalysis {
   connectionMap: string;
   whyItsSuppressed: string;
   searchResults: { title: string; source: string; link: string; snippet: string }[];
+}
+
+export interface SuppressedSearchEntry {
+  query: string;
+  analysis: SearchAnalysis | null;
 }
 
 export interface TickerItem {

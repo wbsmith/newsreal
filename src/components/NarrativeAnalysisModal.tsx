@@ -110,13 +110,22 @@ export default function NarrativeAnalysisModal({
               </div>
               <div className="search-results-list">
                 {analysis.relatedStories.map((story, i) => (
-                  <a
-                    key={i}
-                    href={`/story/${story.slug}`}
-                    className="search-result-item"
-                  >
-                    {story.headline}
-                  </a>
+                  <div key={i} className="search-result-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                    <a href={`/story/${story.slug}`}>
+                      {story.headline}
+                    </a>
+                    {story.sourceUrl && (
+                      <a
+                        href={story.sourceUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="source-link-tag"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        SOURCE {'\u2192'}
+                      </a>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>

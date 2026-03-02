@@ -1,6 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
 import Parser from 'rss-parser';
-import * as fuzzball from 'fuzzball';
 import { formatDistanceToNow } from 'date-fns';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
@@ -247,22 +246,78 @@ async function fetchAllFeeds(): Promise<{ items: FeedItem[]; sourceErrors: numbe
   return { items, sourceErrors };
 }
 
-// ─── Deduplication ───
+// ─── Deduplication (trigram cosine similarity) ───
+
+function buildTrigrams(title: string): Map<string, number> {
+  const s = title.toLowerCase().trim();
+  const map = new Map<string, number>();
+  for (let i = 0; i <= s.length - 3; i++) {
+    const tri = s.slice(i, i + 3);
+    map.set(tri, (map.get(tri) || 0) + 1);
+  }
+  return map;
+}
+
+function trigramMagnitude(map: Map<string, number>): number {
+  let sum = 0;
+  for (const v of map.values()) sum += v * v;
+  return Math.sqrt(sum);
+}
+
+function trigramCosineSim(
+  a: Map<string, number>, magA: number,
+  b: Map<string, number>, magB: number
+): number {
+  if (magA === 0 || magB === 0) return 0;
+  let dot = 0;
+  const [smaller, larger] = a.size <= b.size ? [a, b] : [b, a];
+  for (const [key, val] of smaller) {
+    const other = larger.get(key);
+    if (other !== undefined) dot += val * other;
+  }
+  return dot / (magA * magB);
+}
+
+const DEDUP_THRESHOLD = 0.7;
 
 function deduplicateStories(items: FeedItem[]): { unique: FeedItem[]; duplicates: number } {
   const unique: FeedItem[] = [];
+  const trigrams: Map<string, number>[] = [];
+  const magnitudes: number[] = [];
+  const seenExact = new Set<string>();
   let duplicates = 0;
+
   for (const item of items) {
+    const titleLower = item.title.toLowerCase().trim();
+
+    // Fast path: exact match
+    if (seenExact.has(titleLower)) {
+      duplicates++;
+      continue;
+    }
+
+    // Build trigram vector for this title
+    const tVec = buildTrigrams(titleLower);
+    const tMag = trigramMagnitude(tVec);
+
+    // Compare against all existing unique items
     let isDuplicate = false;
-    for (const existing of unique) {
-      if ((fuzzball as any).ratio(item.title.toLowerCase(), existing.title.toLowerCase()) >= 75) {
+    for (let i = 0; i < trigrams.length; i++) {
+      if (trigramCosineSim(tVec, tMag, trigrams[i], magnitudes[i]) >= DEDUP_THRESHOLD) {
         isDuplicate = true;
         duplicates++;
         break;
       }
     }
-    if (!isDuplicate) unique.push(item);
+
+    if (!isDuplicate) {
+      unique.push(item);
+      trigrams.push(tVec);
+      magnitudes.push(tMag);
+      seenExact.add(titleLower);
+    }
   }
+
   return { unique, duplicates };
 }
 
@@ -705,8 +760,8 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
 
   if (allItems.length === 0) throw new Error('All RSS sources failed');
 
-  // Step 2: Deduplicate
-  console.log('Step 2: Deduplicating...');
+  // Step 2: Deduplicate (trigram cosine similarity, handles full set efficiently)
+  console.log(`Step 2: Deduplicating ${allItems.length} items...`);
   const { unique, duplicates } = deduplicateStories(allItems);
   stats.unique = unique.length;
   stats.duplicates = duplicates;

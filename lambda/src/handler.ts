@@ -469,17 +469,30 @@ async function batchProcess<T, R>(items: T[], fn: (item: T) => Promise<R>, batch
 }
 
 function trimForCache(stories: Story[]): Story[] {
+  // Homepage grid only needs: id, slug, category, featured, source, sourceUrl, time,
+  // headline, summary, biasTag, manipulationScore, realAnalysis (featured only).
+  // Deep dive + manipulationBreakdown are fetched on-demand from DynamoDB when modal opens.
+  // Must stay well under DynamoDB's 400KB item limit for 120 stories.
   return stories.slice(0, MAX_STORIES_TO_CACHE).map((s) => ({
-    ...s,
-    summary: s.summary.slice(0, 400),
-    realAnalysis: s.realAnalysis.slice(0, 800),
+    id: s.id,
+    slug: s.slug,
+    category: s.category,
+    featured: s.featured,
+    source: s.source,
+    sourceUrl: s.sourceUrl,
+    time: s.time,
+    headline: s.headline,
+    summary: s.summary.slice(0, 300),
+    biasTag: s.biasTag,
+    manipulationScore: s.manipulationScore,
+    realAnalysis: s.featured ? s.realAnalysis.slice(0, 500) : '',
     deepDive: {
-      mainstream: s.deepDive.mainstream.slice(0, 600),
-      realStory: s.deepDive.realStory.slice(0, 600),
-      leftSpin: s.deepDive.leftSpin.slice(0, 600),
-      rightSpin: s.deepDive.rightSpin.slice(0, 600),
-      whosBenefiting: s.deepDive.whosBenefiting.slice(0, 600),
-      whatsHidden: s.deepDive.whatsHidden.slice(0, 600),
+      mainstream: '',
+      realStory: '',
+      leftSpin: '',
+      rightSpin: '',
+      whosBenefiting: '',
+      whatsHidden: '',
     },
   }));
 }
@@ -1083,14 +1096,21 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
 
   // Step 9: Cache everything
   console.log('Step 9: Caching page data...');
-  await Promise.allSettled([
-    setCached('homepage-stories', trimForCache(stories), CACHE_TTL),
+  const trimmed = trimForCache(stories);
+  const trimmedSize = JSON.stringify(trimmed).length;
+  console.log(`  Cache payload: ${trimmed.length} stories, ~${Math.round(trimmedSize / 1024)}KB`);
+  const cacheResults = await Promise.allSettled([
+    setCached('homepage-stories', trimmed, CACHE_TTL),
     setCached('homepage-narratives', narratives, CACHE_TTL),
     setCached('homepage-obfuscations', obfuscations, CACHE_TTL),
     setCached('homepage-ticker', tickerItems, CACHE_TTL),
     setCached('homepage-suppressed', suppressedSearches, CACHE_TTL),
     setCached('pipeline-last-run', Date.now(), CACHE_TTL),
   ]);
+  const cacheKeys = ['homepage-stories', 'homepage-narratives', 'homepage-obfuscations', 'homepage-ticker', 'homepage-suppressed', 'pipeline-last-run'];
+  cacheResults.forEach((r, i) => {
+    if (r.status === 'rejected') console.error(`  Cache write FAILED for ${cacheKeys[i]}: ${r.reason}`);
+  });
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
   stats.duration = `${duration}s`;

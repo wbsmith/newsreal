@@ -585,6 +585,19 @@ function categoryBalancedSort(classified: { item: FeedItem; classification: Clas
   return result;
 }
 
+type ClassifiedEntry = { item: FeedItem; classification: Classification };
+
+function groupByCategory(items: ClassifiedEntry[]): Map<Category, ClassifiedEntry[]> {
+  const groups = new Map<Category, ClassifiedEntry[]>();
+  for (const entry of items) {
+    const cat = entry.classification.category;
+    const group = groups.get(cat) || [];
+    group.push(entry);
+    groups.set(cat, group);
+  }
+  return groups;
+}
+
 // ─── Prompts ───
 
 const SYSTEM_PROMPT = `You are the NewsReal.ai analysis engine. Your job is to generate provocative, attention-grabbing media criticism for each news story.
@@ -941,17 +954,39 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
   stats.classified = sorted.length;
   console.log(`  Classified ${sorted.length} stories`);
 
-  // Step 5: Deep-analyze with Sonnet
+  // Step 5: Deep-analyze with Sonnet (parallel category streams)
   const toAnalyze = sorted.slice(0, DEEP_ANALYZE_COUNT);
-  console.log(`Step 5: Deep-analyzing ${toAnalyze.length} stories with Sonnet...`);
-  const analysisResults = await batchProcess(toAnalyze, (c) => analyzeStory(c.item, c.classification), ANALYZE_BATCH_SIZE);
+  const categoryGroups = groupByCategory(toAnalyze);
+  const categoryCount = categoryGroups.size;
+  console.log(`Step 5: Deep-analyzing ${toAnalyze.length} stories with Sonnet (${categoryCount} parallel streams)...`);
 
+  const analyzeStart = Date.now();
+  const categoryResults = await Promise.all(
+    Array.from(categoryGroups.entries()).map(async ([category, items]) => {
+      const catStart = Date.now();
+      console.log(`  [${category}] Analyzing ${items.length} stories...`);
+      const results = await batchProcess(items, (c) => analyzeStory(c.item, c.classification), ANALYZE_BATCH_SIZE);
+      const catDuration = ((Date.now() - catStart) / 1000).toFixed(1);
+      const succeeded = results.filter(Boolean).length;
+      console.log(`  [${category}] Done — ${succeeded}/${items.length} in ${catDuration}s`);
+      return { items, results };
+    })
+  );
+  const analyzeDuration = ((Date.now() - analyzeStart) / 1000).toFixed(1);
+
+  // Reassemble in the original sorted order
   const analysisMap = new Map<number, AnalysisResult>();
-  for (let i = 0; i < analysisResults.length; i++) {
-    if (analysisResults[i]) analysisMap.set(i, analysisResults[i]!);
+  for (const { items, results } of categoryResults) {
+    for (let i = 0; i < results.length; i++) {
+      if (results[i]) {
+        const originalIdx = toAnalyze.indexOf(items[i]);
+        analysisMap.set(originalIdx, results[i]!);
+      }
+    }
   }
   stats.analyzed = analysisMap.size;
-  console.log(`  Analyzed ${analysisMap.size} stories`);
+  stats.analyzeDuration = `${analyzeDuration}s`;
+  console.log(`  Analysis complete: ${analysisMap.size} stories in ${analyzeDuration}s (wall clock)`);
 
   // Step 6: Build Story objects
   const stories: Story[] = sorted.map((c, i) => feedItemToStory(c.item, c.classification, analysisMap.get(i) ?? null, i));

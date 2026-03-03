@@ -88,6 +88,7 @@ interface Story {
   hasFullText?: boolean;
   realAnalysis: string;
   deepDive: DeepDive;
+  sourceNetwork?: SourceNetwork;
 }
 
 interface SourceArticle { slug: string; headline: string; sourceUrl: string; }
@@ -109,6 +110,32 @@ interface SearchAnalysis {
 }
 
 interface SuppressedSearchEntry { query: string; analysis: SearchAnalysis | null; }
+
+interface SourceClusterEntry {
+  source: string;
+  title: string;
+  link: string;
+  pubDate: string;
+  similarity: number;
+}
+
+interface SourceCluster {
+  canonical: FeedItem;
+  coverage: SourceClusterEntry[];
+}
+
+interface SourceNetworkEntry {
+  source: string;
+  headline: string;
+  sourceUrl: string;
+  similarity: number;
+  timeDelta: string;
+}
+
+interface SourceNetwork {
+  outletCount: number;
+  entries: SourceNetworkEntry[];
+}
 
 // ─── Config ───
 
@@ -346,18 +373,37 @@ function trigramCosineSim(
 
 const DEDUP_THRESHOLD = 0.7;
 
-function deduplicateStories(items: FeedItem[]): { unique: FeedItem[]; duplicates: number } {
+function addToCluster(
+  clusters: Map<number, SourceCluster>, idx: number,
+  canonical: FeedItem, dup: FeedItem, similarity: number
+) {
+  if (!clusters.has(idx)) {
+    clusters.set(idx, { canonical, coverage: [] });
+  }
+  clusters.get(idx)!.coverage.push({
+    source: dup.source.toUpperCase(),
+    title: dup.title,
+    link: dup.link,
+    pubDate: dup.pubDate,
+    similarity: Math.round(similarity * 100) / 100,
+  });
+}
+
+function deduplicateStories(items: FeedItem[]): { unique: FeedItem[]; duplicates: number; clusters: Map<number, SourceCluster> } {
   const unique: FeedItem[] = [];
   const trigrams: Map<string, number>[] = [];
   const magnitudes: number[] = [];
-  const seenExact = new Set<string>();
+  const seenExact = new Map<string, number>();
+  const clusters = new Map<number, SourceCluster>();
   let duplicates = 0;
 
   for (const item of items) {
     const titleLower = item.title.toLowerCase().trim();
 
-    // Fast path: exact match
+    // Fast path: exact match → add to cluster
     if (seenExact.has(titleLower)) {
+      const idx = seenExact.get(titleLower)!;
+      addToCluster(clusters, idx, unique[idx], item, 1.0);
       duplicates++;
       continue;
     }
@@ -369,7 +415,9 @@ function deduplicateStories(items: FeedItem[]): { unique: FeedItem[]; duplicates
     // Compare against all existing unique items
     let isDuplicate = false;
     for (let i = 0; i < trigrams.length; i++) {
-      if (trigramCosineSim(tVec, tMag, trigrams[i], magnitudes[i]) >= DEDUP_THRESHOLD) {
+      const sim = trigramCosineSim(tVec, tMag, trigrams[i], magnitudes[i]);
+      if (sim >= DEDUP_THRESHOLD) {
+        addToCluster(clusters, i, unique[i], item, sim);
         isDuplicate = true;
         duplicates++;
         break;
@@ -380,11 +428,11 @@ function deduplicateStories(items: FeedItem[]): { unique: FeedItem[]; duplicates
       unique.push(item);
       trigrams.push(tVec);
       magnitudes.push(tMag);
-      seenExact.add(titleLower);
+      seenExact.set(titleLower, unique.length - 1);
     }
   }
 
-  return { unique, duplicates };
+  return { unique, duplicates, clusters };
 }
 
 // ─── Article Fetching (Readability extraction) ───
@@ -822,12 +870,19 @@ Respond in JSON:
   };
 }
 
-function buildNarrativePrompt(storyList: string): { system: string; user: string } {
+function buildNarrativePrompt(storyList: string, clusterEvidence?: string): { system: string; user: string } {
+  const clusterSection = clusterEvidence
+    ? `\n\nCROSS-SOURCE COVERAGE DATA (empirical — from RSS deduplication, not speculative):
+${clusterEvidence}
+
+Use this data to ground your coherence scores. Stories covered by many outlets with near-identical headlines indicate genuine coordinated messaging or wire-service dependence. Score "lexical_alignment" and "source_convergence" based on the actual cluster data above. "counter_narrative_absence" can be inferred from which stories DON'T appear across outlets. "frame_uniformity" remains your editorial judgment based on framing differences.`
+    : '';
+
   return {
     system: `You are the NewsReal.ai Narrative Tracker. You detect coordinated messaging patterns across media outlets. Respond ONLY in valid JSON.`,
     user: `Analyze the following stories from the past 6 hours across all major outlets.
 
-${storyList}
+${storyList}${clusterSection}
 
 Identify dominant narrative patterns. For each, score coherence using this rubric — score each dimension independently (0-25), then sum for the total (0-100).
 
@@ -960,12 +1015,12 @@ async function analyzeStory(item: FeedItem, classification: Classification): Pro
   return parsed;
 }
 
-function feedItemToStory(item: FeedItem, classification: Classification, analysis: AnalysisResult | null, index: number): Story {
+function feedItemToStory(item: FeedItem, classification: Classification, analysis: AnalysisResult | null, index: number, cluster?: SourceCluster): Story {
   const deepDive: DeepDive = analysis
     ? { mainstream: analysis.mainstream_frame, realStory: analysis.real_story, leftSpin: analysis.left_spin, rightSpin: analysis.right_spin, whosBenefiting: analysis.who_benefits, whatsHidden: analysis.whats_hidden }
     : { mainstream: 'Full analysis not yet generated for this story.', realStory: classification.quick_take, leftSpin: 'Deep analysis pending.', rightSpin: 'Deep analysis pending.', whosBenefiting: 'Deep analysis pending.', whatsHidden: 'Deep analysis pending.' };
 
-  return {
+  const story: Story = {
     id: index + 1, slug: slugify(item.title), category: classification.category,
     featured: index === 0, source: item.source.toUpperCase(), sourceUrl: item.link,
     time: relativeTime(item.pubDate), headline: item.title,
@@ -977,6 +1032,29 @@ function feedItemToStory(item: FeedItem, classification: Classification, analysi
     realAnalysis: analysis?.quick_take ?? classification.quick_take,
     deepDive,
   };
+
+  if (cluster && cluster.coverage.length > 0) {
+    story.sourceNetwork = {
+      outletCount: cluster.coverage.length + 1,
+      entries: cluster.coverage.slice(0, 10).map(c => ({
+        source: c.source,
+        headline: c.title,
+        sourceUrl: c.link,
+        similarity: c.similarity,
+        timeDelta: computeTimeDelta(item.pubDate, c.pubDate),
+      })),
+    };
+  }
+
+  return story;
+}
+
+function computeTimeDelta(canonicalDate: string, otherDate: string): string {
+  const diffMs = new Date(otherDate).getTime() - new Date(canonicalDate).getTime();
+  const diffMins = Math.round(diffMs / 60000);
+  if (Math.abs(diffMins) < 60) return `${diffMins >= 0 ? '+' : ''}${diffMins}m`;
+  const diffHrs = Math.round(diffMins / 60);
+  return `${diffHrs >= 0 ? '+' : ''}${diffHrs}h`;
 }
 
 function generateHeatBar(score: number): string {
@@ -1010,11 +1088,18 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
   // Step 2: Deduplicate (trigram cosine similarity, handles full set efficiently)
   stepStart = Date.now();
   console.log(`Step 2: Deduplicating ${allItems.length} items...`);
-  const { unique, duplicates } = deduplicateStories(allItems);
+  const { unique, duplicates, clusters } = deduplicateStories(allItems);
   stats.unique = unique.length;
   stats.duplicates = duplicates;
-  console.log(`  ${unique.length} unique, ${duplicates} duplicates`);
+  stats.clusters = clusters.size;
+  console.log(`  ${unique.length} unique, ${duplicates} duplicates, ${clusters.size} multi-source clusters`);
   stepTime('Step 2', stepStart);
+
+  // Build link→cluster map for stable lookup through pipeline
+  const clustersByLink = new Map<string, SourceCluster>();
+  for (const [idx, cluster] of clusters) {
+    clustersByLink.set(unique[idx].link, cluster);
+  }
 
   // Step 3: Select and optionally fetch full article text
   stepStart = Date.now();
@@ -1080,8 +1165,10 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
   console.log(`  Analysis complete: ${analysisMap.size} stories in ${analyzeDuration}s (wall clock)`);
   stepTime('Step 5', stepStart);
 
-  // Step 6: Build Story objects
-  const stories: Story[] = sorted.map((c, i) => feedItemToStory(c.item, c.classification, analysisMap.get(i) ?? null, i));
+  // Step 6: Build Story objects (with source network from dedup clusters)
+  const stories: Story[] = sorted.map((c, i) => feedItemToStory(c.item, c.classification, analysisMap.get(i) ?? null, i, clustersByLink.get(c.item.link)));
+  const networkedCount = stories.filter(s => s.sourceNetwork).length;
+  console.log(`  ${networkedCount} stories have source network data`);
 
   // Step 7: Sidebar data
   stepStart = Date.now();
@@ -1096,8 +1183,18 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
     `${i + 1}. [${s.source}] "${s.headline}" (slug: ${s.slug})`
   ).join('\n');
 
+  // Build cluster evidence for narrative prompt grounding
+  const clusterEvidence = stories
+    .filter(s => s.sourceNetwork && s.sourceNetwork.outletCount > 2)
+    .slice(0, 20)
+    .map(s => {
+      const outlets = s.sourceNetwork!.entries.map(e => e.source).join(', ');
+      return `"${s.headline}" — covered by ${s.sourceNetwork!.outletCount} outlets: ${s.source}, ${outlets}`;
+    })
+    .join('\n');
+
   const obfuscationPrompt = buildObfuscationPrompt(storyListForPrompt);
-  const narrativePrompt = buildNarrativePrompt(storyListForPrompt);
+  const narrativePrompt = buildNarrativePrompt(storyListForPrompt, clusterEvidence || undefined);
 
   const [obfuscationsRaw, narrativesRaw] = await Promise.all([
     analyzeWithSonnet(obfuscationPrompt.system, obfuscationPrompt.user),

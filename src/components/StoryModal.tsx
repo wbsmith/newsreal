@@ -5,6 +5,7 @@ import BiasTag from './BiasTag';
 import ManipulationMeter from './ManipulationMeter';
 import RedactedText from './RedactedText';
 import AnalysisModal from './AnalysisModal';
+import SourceNetworkSection from './SourceNetworkSection';
 
 interface StoryModalProps {
   story: Story | null;
@@ -81,6 +82,10 @@ export default function StoryModal({ story, onClose }: StoryModalProps) {
                   </div>
                 </div>
               </div>
+
+              {story.sourceNetwork && story.sourceNetwork.entries.length > 0 && (
+                <SourceNetworkSection network={story.sourceNetwork} />
+              )}
 
               <div className="modal-section">
                 <div className="modal-section-title">

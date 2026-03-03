@@ -55,6 +55,7 @@ export interface Story {
   hasFullText?: boolean;
   realAnalysis: string;
   deepDive: DeepDive;
+  sourceNetwork?: SourceNetwork;
 }
 
 export interface Analysis {
@@ -143,6 +144,19 @@ export interface SearchAnalysis {
 export interface SuppressedSearchEntry {
   query: string;
   analysis: SearchAnalysis | null;
+}
+
+export interface SourceNetworkEntry {
+  source: string;
+  headline: string;
+  sourceUrl: string;
+  similarity: number;
+  timeDelta: string;
+}
+
+export interface SourceNetwork {
+  outletCount: number;
+  entries: SourceNetworkEntry[];
 }
 
 export interface TickerItem {

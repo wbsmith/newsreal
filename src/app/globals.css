@@ -717,6 +717,79 @@ a { color: inherit; text-decoration: none; }
   box-shadow: 0 0 8px rgba(0, 188, 212, 0.2);
 }
 
+/* ═══════════════════ SOURCE NETWORK ═══════════════════ */
+.source-network-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--accent-purple);
+  border: 1px solid rgba(124, 77, 255, 0.3);
+  padding: 2px 6px;
+  border-radius: 2px;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.source-network-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.source-network-entry {
+  display: grid;
+  grid-template-columns: 140px 90px 50px 1fr;
+  gap: 8px;
+  align-items: baseline;
+  padding: 8px 12px;
+  background: rgba(124, 77, 255, 0.05);
+  border: 1px solid rgba(124, 77, 255, 0.15);
+  border-radius: 3px;
+  text-decoration: none;
+  color: inherit;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  transition: border-color 0.2s;
+}
+
+.source-network-entry:hover {
+  border-color: var(--accent-purple);
+}
+
+.source-network-outlet {
+  color: var(--accent-purple);
+  font-weight: 500;
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.source-network-sim {
+  color: var(--accent-gold);
+  font-size: 10px;
+}
+
+.source-network-time {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.source-network-entry-headline {
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .source-network-entry {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+}
+
 /* ═══════════════════ EXPANDED STORY MODAL ═══════════════════ */
 .modal-overlay {
   position: fixed;

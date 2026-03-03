@@ -21,6 +21,11 @@ export default function StoryCard({ story, onClick }: StoryCardProps) {
           <span className="story-source">{story.source}</span>
           <span className="story-time">{story.time}</span>
           <BiasTag tag={story.biasTag} />
+          {story.sourceNetwork && story.sourceNetwork.outletCount > 1 && (
+            <span className="source-network-badge">
+              {story.sourceNetwork.outletCount} OUTLETS
+            </span>
+          )}
         </div>
         <h3 className="story-headline">{story.headline}</h3>
         <p className="story-summary">{story.summary}</p>

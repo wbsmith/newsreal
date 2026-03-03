@@ -7,6 +7,7 @@ import BiasTag from '@/components/BiasTag';
 import ManipulationMeter from '@/components/ManipulationMeter';
 import RedactedText from '@/components/RedactedText';
 import ShareButton from '@/components/ShareButtons';
+import SourceNetworkSection from '@/components/SourceNetworkSection';
 import Footer from '@/components/Footer';
 
 interface StoryDetailClientProps {
@@ -93,6 +94,10 @@ export default function StoryDetailClient({ story }: StoryDetailClientProps) {
                   </div>
                 </div>
               </div>
+
+              {story.sourceNetwork && story.sourceNetwork.entries.length > 0 && (
+                <SourceNetworkSection network={story.sourceNetwork} />
+              )}
 
               <div className="modal-section">
                 <div className="modal-section-title">

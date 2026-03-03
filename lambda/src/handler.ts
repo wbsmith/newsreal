@@ -260,10 +260,37 @@ const ALL_FEEDS: { url: string; name: string; hintCategory?: Category }[] = [
   // ─── Politics (supplement) ───
   { url: `${GNEWS_SEARCH}${encodeURIComponent('site:politico.com')}`, name: 'Politico', hintCategory: 'politics' },
   { url: `${GNEWS_SEARCH}${encodeURIComponent('"congressional hearing" OR "subpoena" OR "oversight committee"')}`, name: 'Congressional', hintCategory: 'politics' },
+  { url: 'https://www.nationalreview.com/feed/', name: 'National Review', hintCategory: 'politics' },
+  { url: 'https://thefederalist.com/feed/', name: 'The Federalist', hintCategory: 'politics' },
+  { url: 'https://www.theamericanconservative.com/feed/', name: 'American Conservative', hintCategory: 'politics' },
+  { url: 'https://freebeacon.com/feed/', name: 'Washington Free Beacon', hintCategory: 'politics' },
+  { url: 'https://www.washingtonexaminer.com/feed/', name: 'Washington Examiner', hintCategory: 'politics' },
 
   // ─── World (supplement) ───
   { url: `${GNEWS_SEARCH}${encodeURIComponent('site:aljazeera.com')}`, name: 'Al Jazeera', hintCategory: 'world' },
   { url: `${GNEWS_SEARCH}${encodeURIComponent('site:bbc.com world')}`, name: 'BBC World', hintCategory: 'world' },
+  { url: 'http://feeds.bbci.co.uk/news/world/rss.xml', name: 'BBC Direct', hintCategory: 'world' },
+  { url: 'https://rss.nytimes.com/services/xml/rss/nyt/World.xml', name: 'NYT World', hintCategory: 'world' },
+  { url: 'https://www.theguardian.com/world/rss', name: 'The Guardian', hintCategory: 'world' },
+  { url: 'https://www.aljazeera.com/xml/rss/all.xml', name: 'Al Jazeera Direct', hintCategory: 'world' },
+  { url: 'https://feeds.a.dj.com/rss/RSSWorldNews.xml', name: 'WSJ World', hintCategory: 'world' },
+
+  // ─── Mainstream & Wire (generic, no hint) ───
+  { url: 'https://feeds.npr.org/1001/rss.xml', name: 'NPR' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('site:apnews.com')}`, name: 'AP via Google News' },
+  { url: `${GNEWS_SEARCH}${encodeURIComponent('site:reuters.com')}`, name: 'Reuters via Google News' },
+
+  // ─── Alternative & Investigative ───
+  { url: 'https://www.propublica.org/feeds/propublica/main', name: 'ProPublica' },
+  { url: 'https://theintercept.com/feed/?lang=en', name: 'The Intercept' },
+  { url: 'https://www.democracynow.org/democracynow.rss', name: 'Democracy Now!' },
+  { url: 'https://www.bellingcat.com/feed/', name: 'Bellingcat' },
+
+  // ─── Libertarian Perspectives ───
+  { url: 'https://reason.com/feed/', name: 'Reason' },
+  { url: 'https://www.cato.org/rss/articles', name: 'Cato Institute' },
+  { url: 'https://mises.org/rss.xml', name: 'Mises Institute' },
+  { url: 'https://fee.org/rss', name: 'FEE' },
 ];
 
 async function fetchAllFeeds(): Promise<{ items: FeedItem[]; sourceErrors: number }> {
@@ -963,38 +990,48 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
   const startTime = Date.now();
   const stats: Record<string, unknown> = {};
 
+  function stepTime(label: string, stepStart: number) {
+    const d = ((Date.now() - stepStart) / 1000).toFixed(1);
+    console.log(`  [${label}: ${d}s]`);
+    stats[`time_${label.toLowerCase().replace(/\s+/g, '_')}`] = `${d}s`;
+  }
+
   // Step 1: Fetch all feeds
+  let stepStart = Date.now();
   console.log('Step 1: Fetching RSS feeds...');
   const { items: allItems, sourceErrors } = await fetchAllFeeds();
   stats.fetched = allItems.length;
   stats.sourceErrors = sourceErrors;
   console.log(`  Fetched ${allItems.length} items (${sourceErrors} source errors)`);
+  stepTime('Step 1', stepStart);
 
   if (allItems.length === 0) throw new Error('All RSS sources failed');
 
   // Step 2: Deduplicate (trigram cosine similarity, handles full set efficiently)
+  stepStart = Date.now();
   console.log(`Step 2: Deduplicating ${allItems.length} items...`);
   const { unique, duplicates } = deduplicateStories(allItems);
   stats.unique = unique.length;
   stats.duplicates = duplicates;
   console.log(`  ${unique.length} unique, ${duplicates} duplicates`);
+  stepTime('Step 2', stepStart);
 
   // Step 3: Select and optionally fetch full article text
-  const toClassify = selectForClassification(unique, CLASSIFY_COUNT, 15);
+  stepStart = Date.now();
+  const toClassify = selectForClassification(unique, CLASSIFY_COUNT, 25);
   if (ENABLE_ARTICLE_FETCH) {
     console.log(`Step 3: Fetching full article text for ${toClassify.length} stories...`);
-    const fetchStart = Date.now();
     const { fetched: articlesFetched, failed: articlesFailed } = await fetchArticleTexts(toClassify);
-    const fetchDuration = ((Date.now() - fetchStart) / 1000).toFixed(1);
     stats.articlesFetched = articlesFetched;
     stats.articlesFailed = articlesFailed;
-    stats.articleFetchDuration = `${fetchDuration}s`;
-    console.log(`  Fetched ${articlesFetched}/${toClassify.length} articles in ${fetchDuration}s (${articlesFailed} failed)`);
+    console.log(`  Fetched ${articlesFetched}/${toClassify.length} articles (${articlesFailed} failed)`);
   } else {
     console.log('Step 3: Article fetching disabled (ENABLE_ARTICLE_FETCH=false)');
   }
+  stepTime('Step 3', stepStart);
 
   // Step 4: Classify with Haiku
+  stepStart = Date.now();
   console.log(`Step 4: Classifying ${toClassify.length} stories with Haiku...`);
   const classificationResults = await batchProcess(toClassify, classifyStory, CLASSIFY_BATCH_SIZE);
 
@@ -1006,8 +1043,10 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
   const sorted = categoryBalancedSort(classified);
   stats.classified = sorted.length;
   console.log(`  Classified ${sorted.length} stories`);
+  stepTime('Step 4', stepStart);
 
   // Step 5: Deep-analyze with Sonnet (parallel category streams)
+  stepStart = Date.now();
   const toAnalyze = sorted.slice(0, DEEP_ANALYZE_COUNT);
   const categoryGroups = groupByCategory(toAnalyze);
   const categoryCount = categoryGroups.size;
@@ -1038,13 +1077,14 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
     }
   }
   stats.analyzed = analysisMap.size;
-  stats.analyzeDuration = `${analyzeDuration}s`;
   console.log(`  Analysis complete: ${analysisMap.size} stories in ${analyzeDuration}s (wall clock)`);
+  stepTime('Step 5', stepStart);
 
   // Step 6: Build Story objects
   const stories: Story[] = sorted.map((c, i) => feedItemToStory(c.item, c.classification, analysisMap.get(i) ?? null, i));
 
   // Step 7: Sidebar data
+  stepStart = Date.now();
   console.log('Step 7: Generating sidebar data...');
   const storyBySlug = new Map(stories.map(s => [s.slug, s]));
   function resolveSlugs(slugs: string[]): SourceArticle[] {
@@ -1133,8 +1173,10 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
   stats.tickerItems = tickerItems.length;
   stats.suppressedSearches = suppressedSearches.length;
   console.log(`  Sidebar: ${obfuscations.length} obfuscations, ${narratives.length} narratives, ${tickerItems.length} ticker, ${suppressedSearches.length} suppressed`);
+  stepTime('Step 7', stepStart);
 
   // Step 7b: Precompute narrative analyses (parallel Sonnet calls)
+  stepStart = Date.now();
   console.log('Step 7b: Precomputing narrative analyses...');
   const narrativeAnalyses: NarrativeAnalysis[] = [];
   if (narratives.length > 0) {
@@ -1191,8 +1233,10 @@ Respond in JSON:
     console.log(`  Precomputed ${narrativeAnalyses.length}/${narratives.length} narrative analyses in ${naDuration}s`);
   }
   stats.narrativeAnalyses = narrativeAnalyses.length;
+  stepTime('Step 7b', stepStart);
 
   // Step 7c: Precompute search analyses (RSS + Sonnet per query)
+  stepStart = Date.now();
   console.log('Step 7c: Precomputing search analyses...');
   const searchAnalyses: SuppressedSearchEntry[] = [];
   if (suppressedSearches.length > 0) {
@@ -1271,8 +1315,10 @@ Respond in JSON:
     console.log(`  Precomputed ${succeeded}/${suppressedSearches.length} search analyses in ${saDuration}s`);
   }
   stats.searchAnalyses = searchAnalyses.filter(e => e.analysis).length;
+  stepTime('Step 7c', stepStart);
 
   // Step 8: Store each story individually in DynamoDB
+  stepStart = Date.now();
   console.log('Step 8: Storing stories to DynamoDB...');
   const publishedAt = new Date().toISOString();
   const storeResults = await Promise.allSettled(
@@ -1284,8 +1330,10 @@ Respond in JSON:
   const failed = storeResults.filter((r) => r.status === 'rejected').length;
   stats.stored = stored;
   console.log(`  Stored ${stored}/${stories.length} stories${failed ? ` (${failed} failed)` : ''}`);
+  stepTime('Step 8', stepStart);
 
   // Step 9: Cache manifest + sidebar + precomputed analyses
+  stepStart = Date.now();
   console.log('Step 9: Caching manifest + sidebar + analyses...');
   const manifest = stories.map((s) => s.slug);
   const bulkCacheOps: Promise<void>[] = [
@@ -1320,6 +1368,7 @@ Respond in JSON:
   });
   const cacheFailed = cacheResults.filter(r => r.status === 'rejected').length;
   console.log(`  Cached ${cacheResults.length - cacheFailed}/${cacheResults.length} entries${cacheFailed ? ` (${cacheFailed} failed)` : ''}`);
+  stepTime('Step 9', stepStart);
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
   stats.duration = `${duration}s`;

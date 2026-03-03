@@ -484,11 +484,62 @@ async function batchProcess<T, R>(items: T[], fn: (item: T) => Promise<R>, batch
 }
 
 
+const RECENCY_LAMBDA = 0.04; // exponential decay rate — item at rank 50 gets ~14% weight of rank 0
+const MAX_AGE_HOURS = 18;    // hard cutoff — ignore anything older than this
+
+function sortByRecency(items: FeedItem[]): FeedItem[] {
+  return [...items].sort((a, b) => {
+    const da = new Date(a.pubDate).getTime();
+    const db = new Date(b.pubDate).getTime();
+    return (isNaN(db) ? 0 : db) - (isNaN(da) ? 0 : da);
+  });
+}
+
+function weightedSample(items: FeedItem[], count: number, usedLinks: Set<string>): FeedItem[] {
+  const result: FeedItem[] = [];
+  // Build weighted pool: weight = e^(-λ * rank), rank = position in recency-sorted list
+  const pool = items.filter(item => !usedLinks.has(item.link));
+  const weights = pool.map((_, i) => Math.exp(-RECENCY_LAMBDA * i));
+  const totalWeight = weights.reduce((s, w) => s + w, 0);
+  if (totalWeight === 0 || pool.length === 0) return result;
+
+  // Normalize to cumulative distribution
+  const cdf: number[] = [];
+  let cumulative = 0;
+  for (const w of weights) {
+    cumulative += w / totalWeight;
+    cdf.push(cumulative);
+  }
+
+  // Sample without replacement
+  const taken = new Set<number>();
+  let attempts = 0;
+  while (result.length < count && result.length < pool.length && attempts < count * 10) {
+    attempts++;
+    const r = Math.random();
+    let idx = cdf.findIndex(c => c >= r);
+    if (idx === -1) idx = cdf.length - 1;
+    if (taken.has(idx)) continue;
+    taken.add(idx);
+    usedLinks.add(pool[idx].link);
+    result.push(pool[idx]);
+  }
+  return result;
+}
+
 function selectForClassification(items: FeedItem[], total: number, minPerCategory: number): FeedItem[] {
+  // Filter out stale items
+  const cutoff = Date.now() - MAX_AGE_HOURS * 60 * 60 * 1000;
+  const fresh = items.filter(item => {
+    const t = new Date(item.pubDate).getTime();
+    return !isNaN(t) ? t >= cutoff : true; // keep items with unparseable dates
+  });
+  console.log(`  Recency filter: ${items.length} → ${fresh.length} items (cutoff: ${MAX_AGE_HOURS}h)`);
+
+  // Bucket by hintCategory, sort each bucket by recency
   const categoryBuckets = new Map<string, FeedItem[]>();
   const generalBucket: FeedItem[] = [];
-
-  for (const item of items) {
+  for (const item of fresh) {
     if (item.hintCategory) {
       const bucket = categoryBuckets.get(item.hintCategory) || [];
       bucket.push(item);
@@ -498,40 +549,36 @@ function selectForClassification(items: FeedItem[], total: number, minPerCategor
     }
   }
 
-  const selected: FeedItem[] = [];
+  // Sort each bucket by recency
+  for (const [cat, bucket] of categoryBuckets) {
+    categoryBuckets.set(cat, sortByRecency(bucket));
+  }
+  const sortedGeneral = sortByRecency(generalBucket);
+
   const usedLinks = new Set<string>();
 
-  function addItem(item: FeedItem): boolean {
-    if (usedLinks.has(item.link)) return false;
-    usedLinks.add(item.link);
-    selected.push(item);
-    return true;
-  }
-
-  // Phase 1: take up to minPerCategory from each category bucket
+  // Phase 1: weighted sample minPerCategory from each category bucket
+  const selected: FeedItem[] = [];
   for (const cat of ALL_CATEGORIES) {
     const bucket = categoryBuckets.get(cat) || [];
-    let taken = 0;
-    for (const item of bucket) {
-      if (taken >= minPerCategory) break;
-      if (selected.length >= total) break;
-      if (addItem(item)) taken++;
-    }
+    const sampled = weightedSample(bucket, minPerCategory, usedLinks);
+    selected.push(...sampled);
   }
 
-  // Phase 2: fill remaining from general bucket
-  for (const item of generalBucket) {
-    if (selected.length >= total) break;
-    addItem(item);
+  // Phase 2: fill remaining from general bucket (weighted)
+  const remaining = total - selected.length;
+  if (remaining > 0) {
+    const sampled = weightedSample(sortedGeneral, remaining, usedLinks);
+    selected.push(...sampled);
   }
 
-  // Phase 3: if still room, take overflow from category buckets
-  for (const cat of ALL_CATEGORIES) {
-    const bucket = categoryBuckets.get(cat) || [];
-    for (const item of bucket) {
-      if (selected.length >= total) break;
-      addItem(item);
-    }
+  // Phase 3: if still room, take overflow from category buckets (weighted)
+  if (selected.length < total) {
+    const allRemaining = sortByRecency(
+      fresh.filter(item => !usedLinks.has(item.link))
+    );
+    const sampled = weightedSample(allRemaining, total - selected.length, usedLinks);
+    selected.push(...sampled);
   }
 
   return selected;

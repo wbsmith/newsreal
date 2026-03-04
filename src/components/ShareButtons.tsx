@@ -34,6 +34,17 @@ export default function ShareButton({ url, title }: ShareButtonProps) {
     };
   }, [open]);
 
+  function trackShare() {
+    const slug = url.replace(/.*\/story\//, '').replace(/\/$/, '');
+    if (slug && slug !== url) {
+      fetch('/api/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'share', slug }),
+      }).catch(() => {});
+    }
+  }
+
   async function handleCopy() {
     try {
       await navigator.clipboard.writeText(url);
@@ -46,6 +57,7 @@ export default function ShareButton({ url, title }: ShareButtonProps) {
       document.body.removeChild(input);
     }
     setCopied(true);
+    trackShare();
     setTimeout(() => setCopied(false), 2000);
     setOpen(false);
   }
@@ -54,6 +66,7 @@ export default function ShareButton({ url, title }: ShareButtonProps) {
     if (navigator.share) {
       try {
         await navigator.share({ title, text: `${title} — NewsReal.ai`, url });
+        trackShare();
       } catch {
         // User cancelled
       }

@@ -139,6 +139,9 @@ interface SourceNetwork {
 
 // ─── Config ───
 
+// Module-level prompt overrides — set in runFullPipeline(), read by prompt builders
+let activePromptOverrides = new Map<string, string>();
+
 const CLASSIFY_BATCH_SIZE = 10;
 const ANALYZE_BATCH_SIZE = 5;
 const CLASSIFY_COUNT = 120;
@@ -722,7 +725,7 @@ function groupByCategory(items: ClassifiedEntry[]): Map<Category, ClassifiedEntr
 
 // ─── Prompts ───
 
-const SYSTEM_PROMPT = `You are the NewsReal.ai analysis engine. Your job is to generate provocative, attention-grabbing media criticism for each news story.
+const DEFAULT_SYSTEM_PROMPT = `You are the NewsReal.ai analysis engine. Your job is to generate provocative, attention-grabbing media criticism for each news story.
 
 STYLE GUIDELINES:
 - Be equally skeptical of all political sides
@@ -735,6 +738,10 @@ STYLE GUIDELINES:
 - You are not being neutral — you are being provocatively analytical
 - Do NOT hedge with "it's important to note" or "to be fair" — be direct
 - Respond ONLY in valid JSON. No markdown, no commentary.`;
+
+function getSystemPrompt(): string {
+  return activePromptOverrides.get('analysis-system') || DEFAULT_SYSTEM_PROMPT;
+}
 
 function buildClassifyPrompt(headline: string, summary: string, source: string, fullText?: string): string {
   const textSection = fullText
@@ -767,7 +774,7 @@ MANIPULATION INDEX — score each dimension 0-20, then sum for total (0-100):
 
 function buildAnalysisPrompt(headline: string, source: string, text: string, timestamp: string, hasFullText: boolean): { system: string; user: string } {
   return {
-    system: SYSTEM_PROMPT,
+    system: getSystemPrompt(),
     user: `STORY DATA:
 - Headline: ${headline}
 - Source(s): ${source}
@@ -836,7 +843,7 @@ GENERATE THE FOLLOWING (respond in JSON):
 
 function buildObfuscationPrompt(storyList: string): { system: string; user: string } {
   return {
-    system: `You are the NewsReal.ai Obfuscation Detector. Your job is to identify stories that are being BURIED by the current news cycle. Respond ONLY in valid JSON.`,
+    system: activePromptOverrides.get('obfuscation-system') || `You are the NewsReal.ai Obfuscation Detector. Your job is to identify stories that are being BURIED by the current news cycle. Respond ONLY in valid JSON.`,
     user: `INPUTS:
 - Today's top stories across all major outlets:
 ${storyList}
@@ -879,7 +886,7 @@ Use this data to ground your coherence scores. Stories covered by many outlets w
     : '';
 
   return {
-    system: `You are the NewsReal.ai Narrative Tracker. You detect coordinated messaging patterns across media outlets. Respond ONLY in valid JSON.`,
+    system: activePromptOverrides.get('narrative-system') || `You are the NewsReal.ai Narrative Tracker. You detect coordinated messaging patterns across media outlets. Respond ONLY in valid JSON.`,
     user: `Analyze the following stories from the past 6 hours across all major outlets.
 
 ${storyList}${clusterSection}
@@ -946,7 +953,7 @@ function buildTickerPrompt(
     : '';
 
   return {
-    system: `You generate ticker alerts for the NewsReal.ai scrolling banner. Respond ONLY in valid JSON.`,
+    system: activePromptOverrides.get('ticker-system') || `You generate ticker alerts for the NewsReal.ai scrolling banner. Respond ONLY in valid JSON.`,
     user: `Given these story clusters and analyses from the past 6 hours, generate 8-10 ticker alerts.
 
 Stories: ${stories}
@@ -972,7 +979,7 @@ Respond in JSON:
 
 function buildSuppressedSearchesPrompt(stories: string, obfuscations: string): { system: string; user: string } {
   return {
-    system: `You generate "forbidden knowledge" search queries for NewsReal.ai. Respond ONLY in valid JSON.`,
+    system: activePromptOverrides.get('suppressed-system') || `You generate "forbidden knowledge" search queries for NewsReal.ai. Respond ONLY in valid JSON.`,
     user: `Based on today's stories and the government filings that received no media coverage, generate 5-8 search queries that a well-informed citizen SHOULD be searching for but probably isn't.
 
 Today's stories: ${stories}
@@ -1072,6 +1079,28 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
     const d = ((Date.now() - stepStart) / 1000).toFixed(1);
     console.log(`  [${label}: ${d}s]`);
     stats[`time_${label.toLowerCase().replace(/\s+/g, '_')}`] = `${d}s`;
+  }
+
+  // Load prompt overrides from admin dashboard
+  const promptOverrideNames = [
+    'classify-system', 'analysis-system', 'analysis-rubric',
+    'obfuscation-system', 'narrative-system', 'narrative-rubric',
+    'ticker-system', 'suppressed-system',
+    'narrative-analysis-system', 'search-analysis-system',
+  ];
+  activePromptOverrides = new Map<string, string>();
+  try {
+    const overrides = await Promise.all(
+      promptOverrideNames.map(n => getCached<{ content: string }>(`admin-prompt:${n}`))
+    );
+    promptOverrideNames.forEach((name, i) => {
+      if (overrides[i]?.content) activePromptOverrides.set(name, overrides[i]!.content);
+    });
+    if (activePromptOverrides.size > 0) {
+      console.log(`Loaded ${activePromptOverrides.size} prompt override(s): ${Array.from(activePromptOverrides.keys()).join(', ')}`);
+    }
+  } catch (err) {
+    console.error('Failed to load prompt overrides:', err instanceof Error ? err.message : err);
   }
 
   // Step 1: Fetch all feeds
@@ -1285,7 +1314,7 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
         `${i + 1}. [${s.sourceUrl ? new URL(s.sourceUrl).hostname.replace('www.', '') : 'unknown'}] ${s.headline}`
       ).join('\n') || 'None identified';
 
-      const naSystem = `You are the NewsReal.ai analysis engine. Your job is to generate provocative, attention-grabbing media criticism. Be equally skeptical of all political sides. Always follow the money. Be direct. Be bold. Respond ONLY in valid JSON. No markdown, no commentary.`;
+      const naSystem = activePromptOverrides.get('narrative-analysis-system') || `You are the NewsReal.ai analysis engine. Your job is to generate provocative, attention-grabbing media criticism. Be equally skeptical of all political sides. Always follow the money. Be direct. Be bold. Respond ONLY in valid JSON. No markdown, no commentary.`;
       const naUser = `A NewsReal.ai user clicked on a detected narrative pattern to get a deep analysis. Analyze this coordinated messaging pattern.
 
 NARRATIVE: "${plainText}"
@@ -1365,7 +1394,7 @@ Respond in JSON:
           `${idx + 1}. [${r.source}] ${r.title}\n   ${r.snippet}`
         ).join('\n\n');
 
-        const saSystem = `You are the NewsReal.ai analysis engine. Your job is to generate provocative, attention-grabbing media criticism. Be equally skeptical of all political sides. Always follow the money. Be direct. Be bold. Respond ONLY in valid JSON. No markdown, no commentary.`;
+        const saSystem = activePromptOverrides.get('search-analysis-system') || `You are the NewsReal.ai analysis engine. Your job is to generate provocative, attention-grabbing media criticism. Be equally skeptical of all political sides. Always follow the money. Be direct. Be bold. Respond ONLY in valid JSON. No markdown, no commentary.`;
         const saUser = `A NewsReal.ai user clicked on a "suppressed search" query. Your job is to analyze the search results and expose the patterns in how media is (or isn't) covering this topic.
 
 SEARCH QUERY: "${query}"
@@ -1471,6 +1500,20 @@ Respond in JSON:
   stats.duration = `${duration}s`;
   stats.timestamp = new Date().toISOString();
   console.log(`Pipeline complete in ${duration}s`);
+
+  // Store full stats for admin dashboard
+  try {
+    const runKey = `pipeline-run:${stats.timestamp}`;
+    await setCached(runKey, stats, 30 * 86400);
+
+    const runsManifest = await getCached<string[]>('pipeline-runs') || [];
+    runsManifest.unshift(stats.timestamp as string);
+    if (runsManifest.length > 20) runsManifest.length = 20;
+    await setCached('pipeline-runs', runsManifest, 30 * 86400);
+    console.log('  Admin stats saved');
+  } catch (err) {
+    console.error('  Failed to save admin stats:', err instanceof Error ? err.message : err);
+  }
 
   return { success: true, ...stats };
 }

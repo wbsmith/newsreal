@@ -16,6 +16,7 @@ interface PipelineRun {
   suppressedSearches: number;
   stored: number;
   sourceErrors: number;
+  errorDetails?: string[];
   [key: string]: unknown;
 }
 
@@ -147,6 +148,17 @@ export default function Dashboard() {
           </table>
         ) : (
           <div style={{ ...s.card, color: '#666', textAlign: 'center' }}>No pipeline data yet. Runs will appear after the Lambda executes with the updated code.</div>
+        )}
+
+        {latestRun?.errorDetails && latestRun.errorDetails.length > 0 && (
+          <div style={{ ...s.card, marginTop: '0.75rem', borderColor: '#ff444433' }}>
+            <div style={{ ...s.label, marginBottom: '0.5rem', color: '#ff4444' }}>LATEST RUN — FEED ERRORS ({latestRun.errorDetails.length})</div>
+            {latestRun.errorDetails.map((err, i) => (
+              <div key={i} style={{ fontSize: '0.7rem', color: '#ff8888', marginBottom: '0.25rem', fontFamily: "'JetBrains Mono', monospace" }}>
+                {err}
+              </div>
+            ))}
+          </div>
         )}
 
         {latestRun && (

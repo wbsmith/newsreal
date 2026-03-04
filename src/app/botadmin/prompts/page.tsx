@@ -7,6 +7,7 @@ interface PromptEntry {
   name: string;
   description: string;
   type: 'system' | 'rubric' | 'instruction';
+  defaultText: string;
   hasOverride: boolean;
   override: { content: string; updatedAt: string; updatedBy: string } | null;
 }
@@ -161,8 +162,24 @@ export default function PromptsPage() {
           {expanded === p.name && (
             <div style={{ padding: '0 1rem 1rem' }}>
               <div style={s.desc}>{p.description}</div>
+
+              <div style={{ fontSize: '0.6rem', color: '#888', letterSpacing: '0.1em', marginBottom: '0.35rem' }}>
+                {p.hasOverride ? 'HARDCODED DEFAULT (inactive — override below is being used)' : 'CURRENT PROMPT (hardcoded default)'}
+              </div>
+              <pre style={{
+                ...s.textarea,
+                minHeight: '120px',
+                opacity: p.hasOverride ? 0.5 : 1,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                overflow: 'auto',
+              }}>{p.defaultText}</pre>
+
+              <div style={{ fontSize: '0.6rem', color: '#d4af37', letterSpacing: '0.1em', marginTop: '1rem', marginBottom: '0.35rem' }}>
+                OVERRIDE {p.hasOverride ? '(ACTIVE)' : '(not set — save to activate)'}
+              </div>
               {p.override && (
-                <div style={{ fontSize: '0.6rem', color: '#666', padding: '0 0 0.5rem', fontStyle: 'italic' }}>
+                <div style={{ fontSize: '0.6rem', color: '#666', marginBottom: '0.35rem', fontStyle: 'italic' }}>
                   Last modified: {new Date(p.override.updatedAt).toLocaleString()} by {p.override.updatedBy}
                 </div>
               )}
@@ -170,7 +187,7 @@ export default function PromptsPage() {
                 style={s.textarea}
                 value={edits[p.name] ?? (p.override?.content || '')}
                 onChange={e => setEdits(prev => ({ ...prev, [p.name]: e.target.value }))}
-                placeholder="Enter prompt override text... (leave empty and the hardcoded default will be used)"
+                placeholder="Paste modified prompt text here to override the default..."
                 spellCheck={false}
               />
               {message?.name === p.name && (

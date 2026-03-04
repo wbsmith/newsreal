@@ -323,23 +323,32 @@ const ALL_FEEDS: { url: string; name: string; hintCategory?: Category }[] = [
   { url: 'https://fee.org/rss', name: 'FEE' },
 ];
 
-async function fetchAllFeeds(): Promise<{ items: FeedItem[]; sourceErrors: number }> {
+async function fetchAllFeeds(): Promise<{ items: FeedItem[]; sourceErrors: number; errorDetails: string[] }> {
   const results = await Promise.allSettled(
     ALL_FEEDS.map(async (f) => {
       const items = await fetchFeed(f.url, f.name);
       if (f.hintCategory) {
-        return items.map((item) => ({ ...item, hintCategory: f.hintCategory }));
+        return { name: f.name, items: items.map((item) => ({ ...item, hintCategory: f.hintCategory })) };
       }
-      return items;
+      return { name: f.name, items };
     })
   );
   const items: FeedItem[] = [];
   let sourceErrors = 0;
-  for (const result of results) {
-    if (result.status === 'fulfilled') items.push(...result.value);
-    else { sourceErrors++; console.error('Feed fetch failed:', result.reason); }
+  const errorDetails: string[] = [];
+  for (let i = 0; i < results.length; i++) {
+    const result = results[i];
+    if (result.status === 'fulfilled') {
+      items.push(...result.value.items);
+    } else {
+      sourceErrors++;
+      const feedName = ALL_FEEDS[i].name;
+      const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
+      errorDetails.push(`${feedName}: ${reason}`);
+      console.error(`Feed fetch failed [${feedName}]:`, reason);
+    }
   }
-  return { items, sourceErrors };
+  return { items, sourceErrors, errorDetails };
 }
 
 // ─── Deduplication (trigram cosine similarity) ───
@@ -1106,9 +1115,10 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
   // Step 1: Fetch all feeds
   let stepStart = Date.now();
   console.log('Step 1: Fetching RSS feeds...');
-  const { items: allItems, sourceErrors } = await fetchAllFeeds();
+  const { items: allItems, sourceErrors, errorDetails } = await fetchAllFeeds();
   stats.fetched = allItems.length;
   stats.sourceErrors = sourceErrors;
+  stats.errorDetails = errorDetails;
   console.log(`  Fetched ${allItems.length} items (${sourceErrors} source errors)`);
   stepTime('Step 1', stepStart);
 

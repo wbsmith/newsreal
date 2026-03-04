@@ -706,7 +706,7 @@ a { color: inherit; text-decoration: none; }
   padding: 2px 8px;
   border-radius: 2px;
   text-decoration: none;
-  transition: all 0.2s;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
   white-space: nowrap;
 }
 
@@ -836,7 +836,7 @@ a { color: inherit; text-decoration: none; }
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: background 0.2s, color 0.2s;
 }
 
 .modal-close:hover {
@@ -979,7 +979,7 @@ a { color: inherit; text-decoration: none; }
   font-size: 11px;
   color: var(--text-secondary);
   text-decoration: none;
-  transition: all 0.2s;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
   line-height: 1.4;
 }
 
@@ -1044,7 +1044,7 @@ a { color: inherit; text-decoration: none; }
   padding: 0 4px;
   border-radius: 2px;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: background 0.3s, color 0.3s;
   user-select: none;
 }
 
@@ -1071,7 +1071,7 @@ a { color: inherit; text-decoration: none; }
   letter-spacing: 1.5px;
   padding: 6px 12px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
   text-transform: uppercase;
 }
 
@@ -1120,7 +1120,7 @@ a { color: inherit; text-decoration: none; }
   cursor: pointer;
   text-align: left;
   text-transform: uppercase;
-  transition: all 0.2s;
+  transition: color 0.2s, background 0.2s;
 }
 
 .share-dropdown-item:hover {
@@ -1141,7 +1141,7 @@ a { color: inherit; text-decoration: none; }
   color: var(--accent-red);
   border: 1px solid var(--accent-red);
   padding: 10px 24px;
-  transition: all 0.2s;
+  transition: background 0.2s, box-shadow 0.2s;
   text-decoration: none;
 }
 
@@ -1153,7 +1153,7 @@ a { color: inherit; text-decoration: none; }
 /* ═══════════════════ CLICKABLE NARRATIVES ═══════════════════ */
 .narrative-item-clickable {
   cursor: pointer;
-  transition: all 0.2s;
+  transition: background 0.2s;
 }
 
 .narrative-item-clickable:hover {
@@ -1175,7 +1175,7 @@ a { color: inherit; text-decoration: none; }
 /* ═══════════════════ CLICKABLE TICKER ═══════════════════ */
 .ticker-item-clickable {
   cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.2s;
 }
 
 .ticker-item-clickable:hover {

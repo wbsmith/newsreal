@@ -274,7 +274,11 @@ const ALL_FEEDS: { url: string; name: string; hintCategory?: Category }[] = [
   { url: `${GNEWS_SEARCH}${encodeURIComponent('site:bloomberg.com')}`, name: 'Bloomberg', hintCategory: 'finance' },
   { url: `${GNEWS_SEARCH}${encodeURIComponent('"Wall Street" OR "stock market" OR "IPO"')}`, name: 'Markets', hintCategory: 'finance' },
 
-  // ─── Science ───
+  // ─── Science (direct journal feeds first for priority) ───
+  { url: 'https://www.nature.com/nature.rss', name: 'Nature', hintCategory: 'science' },
+  { url: 'https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=science', name: 'Science', hintCategory: 'science' },
+  { url: 'https://speakingofmedicine.plos.org/feed/', name: 'PLOS Speaking of Medicine', hintCategory: 'science' },
+  { url: 'https://absolutelymaybe.plos.org/feed/', name: 'PLOS Absolutely Maybe', hintCategory: 'science' },
   { url: `${GNEWS_SEARCH}${encodeURIComponent('"scientific study" OR "research finds"')}`, name: 'Science Research', hintCategory: 'science' },
   { url: `${GNEWS_SEARCH}${encodeURIComponent('"NASA" OR "SpaceX" OR "space exploration"')}`, name: 'Space News', hintCategory: 'science' },
   { url: `${GNEWS_SEARCH}${encodeURIComponent('"climate change" OR "climate research"')}`, name: 'Climate Science', hintCategory: 'science' },
@@ -318,7 +322,8 @@ const ALL_FEEDS: { url: string; name: string; hintCategory?: Category }[] = [
 
   // ─── Libertarian Perspectives ───
   { url: 'https://reason.com/feed/', name: 'Reason' },
-  { url: 'https://www.cato.org/rss/articles', name: 'Cato Institute' },
+  // { url: 'https://www.cato.org/rss/articles', name: 'Cato Institute' }, // 404 as of 2026-03
+
   { url: 'https://mises.org/rss.xml', name: 'Mises Institute' },
   { url: 'https://fee.org/rss', name: 'FEE' },
 ];

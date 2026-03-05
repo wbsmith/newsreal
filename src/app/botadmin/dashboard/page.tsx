@@ -63,6 +63,8 @@ const s = {
 export default function Dashboard() {
   const [data, setData] = useState<StatsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [triggering, setTriggering] = useState(false);
+  const [triggerMsg, setTriggerMsg] = useState('');
   const router = useRouter();
 
   useEffect(() => {
@@ -72,6 +74,24 @@ export default function Dashboard() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  async function handleTrigger() {
+    if (!confirm('Trigger a full pipeline run? This takes ~10 minutes and costs ~$2 in API calls.')) return;
+    setTriggering(true);
+    setTriggerMsg('');
+    try {
+      const res = await fetch('/api/admin/trigger', { method: 'POST' });
+      if (res.ok) {
+        setTriggerMsg('PIPELINE TRIGGERED — check back in ~10 minutes');
+      } else {
+        const d = await res.json().catch(() => ({}));
+        setTriggerMsg(`FAILED: ${d.error || res.statusText}`);
+      }
+    } catch {
+      setTriggerMsg('CONNECTION ERROR');
+    }
+    setTriggering(false);
+  }
 
   async function handleLogout() {
     await fetch('/api/admin/logout', { method: 'POST' });
@@ -108,7 +128,7 @@ export default function Dashboard() {
       <div style={s.section}>
         <div style={s.sectionTitle}>Pipeline Status</div>
 
-        <div style={{ ...s.card, display: 'flex', gap: '2rem', flexWrap: 'wrap' }}>
+        <div style={{ ...s.card, display: 'flex', gap: '2rem', flexWrap: 'wrap', alignItems: 'center' }}>
           <div>
             <div style={s.label}>LAST RUN</div>
             <div style={s.valueSm}>{timeSinceRun}</div>
@@ -116,6 +136,26 @@ export default function Dashboard() {
           <div>
             <div style={s.label}>STORIES IN CACHE</div>
             <div style={s.value}>{data?.storyCount || 0}</div>
+          </div>
+          <div style={{ marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '0.3rem' }}>
+            <button
+              onClick={handleTrigger}
+              disabled={triggering}
+              style={{
+                background: triggering ? '#333' : '#c62828',
+                color: '#fff',
+                border: 'none',
+                padding: '0.45rem 1rem',
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: '0.65rem',
+                fontWeight: 700,
+                letterSpacing: '0.15em',
+                cursor: triggering ? 'wait' : 'pointer',
+              }}
+            >{triggering ? 'TRIGGERING...' : 'TRIGGER PIPELINE'}</button>
+            {triggerMsg && (
+              <div style={{ fontSize: '0.6rem', color: triggerMsg.startsWith('FAILED') ? '#ff4444' : '#4a4' }}>{triggerMsg}</div>
+            )}
           </div>
         </div>
 

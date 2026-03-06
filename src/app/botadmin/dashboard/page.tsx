@@ -119,6 +119,7 @@ export default function Dashboard() {
         <div style={s.title}>NEWSREAL ADMIN</div>
         <div style={s.nav}>
           <span style={s.navActive}>DASHBOARD</span>
+          <a href="/botadmin/visitors" style={s.navLink}>VISITORS</a>
           <a href="/botadmin/prompts" style={s.navLink}>PROMPTS</a>
           <button onClick={handleLogout} style={s.logoutBtn}>LOGOUT</button>
         </div>
@@ -224,14 +225,14 @@ export default function Dashboard() {
 
         <div style={s.card}>
           {data?.analytics.days.map(day => (
-            <div key={day.date} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.4rem' }}>
+            <a key={day.date} href={`/botadmin/visitors?date=${day.date}`} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '0.4rem', textDecoration: 'none', cursor: 'pointer' }}>
               <div style={{ width: '80px', fontSize: '0.7rem', color: '#888', flexShrink: 0 }}>{day.date.slice(5)}</div>
               <div style={{ flex: 1 }}>
                 <div style={s.bar(day.uniqueVisitors / maxPageviews * 100)} />
               </div>
               <div style={{ width: '40px', fontSize: '0.7rem', color: '#c8c8d0', textAlign: 'right' }}>{day.uniqueVisitors}</div>
               <div style={{ width: '60px', fontSize: '0.6rem', color: '#666', textAlign: 'right' }}>{day.pageviews} pv</div>
-            </div>
+            </a>
           ))}
         </div>
 

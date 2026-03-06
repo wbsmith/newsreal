@@ -16,7 +16,7 @@ export default function NarrativeAnalysisModal({
   error,
   onClose,
 }: NarrativeAnalysisModalProps) {
-  const siteUrl = typeof window !== 'undefined' ? window.location.origin : 'https://www.newsreal.ai';
+  const siteUrl = typeof window !== 'undefined' ? window.location.href : 'https://www.newsreal.ai';
   const shareTitle = analysis?.narrativeText?.replace(/<[^>]*>/g, '') || 'Narrative Analysis';
 
   const header = analysis ? (

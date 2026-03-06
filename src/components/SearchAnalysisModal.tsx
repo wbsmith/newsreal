@@ -16,7 +16,7 @@ export default function SearchAnalysisModal({
   error,
   onClose,
 }: SearchAnalysisModalProps) {
-  const siteUrl = typeof window !== 'undefined' ? window.location.origin : 'https://www.newsreal.ai';
+  const siteUrl = typeof window !== 'undefined' ? window.location.href : 'https://www.newsreal.ai';
 
   const header = analysis ? (
     <>

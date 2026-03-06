@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
 
-const PROTECTED_PAGES = ['/botadmin/dashboard', '/botadmin/prompts'];
+const PROTECTED_PAGES = ['/botadmin/dashboard', '/botadmin/visitors', '/botadmin/prompts'];
 const PROTECTED_API = '/api/admin/';
 const LOGIN_PAGE = '/botadmin';
 

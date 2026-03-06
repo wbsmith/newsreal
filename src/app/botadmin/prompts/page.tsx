@@ -138,6 +138,7 @@ export default function PromptsPage() {
         <div style={s.title}>NEWSREAL ADMIN</div>
         <div style={s.nav}>
           <a href="/botadmin/dashboard" style={s.navLink}>DASHBOARD</a>
+          <a href="/botadmin/visitors" style={s.navLink}>VISITORS</a>
           <span style={s.navActive}>PROMPTS</span>
           <button onClick={handleLogout} style={s.logoutBtn}>LOGOUT</button>
         </div>

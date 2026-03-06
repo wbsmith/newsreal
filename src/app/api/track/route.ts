@@ -10,6 +10,20 @@ interface DailyAnalytics {
   topPages: Record<string, number>;
 }
 
+interface VisitorRecord {
+  ip: string;
+  userAgent: string;
+  path: string;
+  referrer: string;
+  timestamp: string;
+}
+
+interface DailyVisitors {
+  visits: VisitorRecord[];
+}
+
+const MAX_VISITOR_RECORDS = 500;
+
 const ANALYTICS_TTL = 365 * 86400; // 1 year
 const MAX_UNIQUE_IPS = 10000;
 
@@ -72,6 +86,24 @@ export async function POST(request: NextRequest) {
     }
 
     await setCached(cacheKey, current, ANALYTICS_TTL);
+
+    // Store individual visitor record (for admin detail view)
+    if (body.event !== 'share') {
+      const userAgent = request.headers.get('user-agent') || 'unknown';
+      const visitorsKey = `visitors:${date}`;
+      const visitors = await getCached<DailyVisitors>(visitorsKey) || { visits: [] };
+      visitors.visits.push({
+        ip,
+        userAgent,
+        path: body.path || '/',
+        referrer: body.referrer || '',
+        timestamp: new Date().toISOString(),
+      });
+      if (visitors.visits.length > MAX_VISITOR_RECORDS) {
+        visitors.visits = visitors.visits.slice(-MAX_VISITOR_RECORDS);
+      }
+      await setCached(visitorsKey, visitors, ANALYTICS_TTL);
+    }
 
     // Update days manifest
     const manifest = await getCached<string[]>('analytics-days') || [];

@@ -242,31 +242,6 @@ async function fetchFeed(url: string, sourceName: string): Promise<FeedItem[]> {
   }));
 }
 
-async function fetchReddit(subreddit: string, sourceName: string, limit = 20): Promise<FeedItem[]> {
-  const url = `https://www.reddit.com/r/${subreddit}.json?limit=${limit}&raw_json=1`;
-  const res = await fetch(url, {
-    headers: { 'User-Agent': 'newsreal-bot/1.0' },
-  });
-  if (!res.ok) throw new Error(`Reddit ${res.status}: ${res.statusText}`);
-  const json = await res.json();
-  const posts = json?.data?.children || [];
-  return posts
-    .filter((p: any) => p.data && !p.data.stickied)
-    .map((p: any) => ({
-      title: p.data.title || '',
-      link: p.data.url || `https://www.reddit.com${p.data.permalink}`,
-      pubDate: new Date((p.data.created_utc || 0) * 1000).toISOString(),
-      contentSnippet: p.data.selftext?.slice(0, 500) || '',
-      source: sourceName,
-    }));
-}
-
-const REDDIT_FEEDS: { subreddit: string; name: string; hintCategory?: Category; limit?: number }[] = [
-  { subreddit: 'wallstreetbets', name: 'r/wallstreetbets', hintCategory: 'finance', limit: 20 },
-  { subreddit: 'stocks', name: 'r/stocks', hintCategory: 'finance', limit: 20 },
-  { subreddit: 'economics', name: 'r/economics', hintCategory: 'finance', limit: 20 },
-];
-
 const GNEWS_SEARCH = 'https://news.google.com/rss/search?hl=en-US&gl=US&ceid=US:en&q=';
 
 const ALL_FEEDS: { url: string; name: string; hintCategory?: Category }[] = [
@@ -286,6 +261,9 @@ const ALL_FEEDS: { url: string; name: string; hintCategory?: Category }[] = [
   { url: 'https://www.reddit.com/r/politics/.rss', name: 'Reddit r/politics' },
   { url: 'https://www.reddit.com/r/worldnews/.rss', name: 'Reddit r/worldnews' },
   { url: 'https://www.reddit.com/r/conspiracy/.rss', name: 'Reddit r/conspiracy' },
+  { url: 'https://www.reddit.com/r/wallstreetbets/.rss', name: 'Reddit r/wallstreetbets', hintCategory: 'finance' },
+  { url: 'https://www.reddit.com/r/stocks/.rss', name: 'Reddit r/stocks', hintCategory: 'finance' },
+  { url: 'https://www.reddit.com/r/economics/.rss', name: 'Reddit r/economics', hintCategory: 'finance' },
 
   // ─── Tech & AI ───
   { url: `${GNEWS_SEARCH}${encodeURIComponent('site:techcrunch.com')}`, name: 'TechCrunch', hintCategory: 'tech' },
@@ -373,15 +351,7 @@ async function fetchAllFeeds(): Promise<{ items: FeedItem[]; sourceErrors: numbe
     }
     return { name: f.name, items };
   });
-  const redditPromises = REDDIT_FEEDS.map(async (f) => {
-    const items = await fetchReddit(f.subreddit, f.name, f.limit);
-    if (f.hintCategory) {
-      return { name: f.name, items: items.map((item) => ({ ...item, hintCategory: f.hintCategory })) };
-    }
-    return { name: f.name, items };
-  });
-  const results = await Promise.allSettled([...rssPromises, ...redditPromises]);
-  const allFeedNames = [...ALL_FEEDS.map(f => f.name), ...REDDIT_FEEDS.map(f => f.name)];
+  const results = await Promise.allSettled(rssPromises);
   const items: FeedItem[] = [];
   let sourceErrors = 0;
   const errorDetails: string[] = [];
@@ -391,7 +361,7 @@ async function fetchAllFeeds(): Promise<{ items: FeedItem[]; sourceErrors: numbe
       items.push(...result.value.items);
     } else {
       sourceErrors++;
-      const feedName = allFeedNames[i];
+      const feedName = ALL_FEEDS[i].name;
       const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
       errorDetails.push(`${feedName}: ${reason}`);
       console.error(`Feed fetch failed [${feedName}]:`, reason);

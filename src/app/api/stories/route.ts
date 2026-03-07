@@ -68,6 +68,27 @@ export async function GET(request: Request) {
     stories = stories.filter((s) => s.category === category);
   }
 
+  // Fetch bonus stories for finance/science category requests
+  if (category === 'finance' || category === 'science') {
+    try {
+      const bonusSlugs = await getCached<string[]>(`homepage-bonus-${category}`);
+      if (bonusSlugs && bonusSlugs.length > 0) {
+        const mainSlugs = new Set(stories.map(s => s.slug));
+        const newSlugs = bonusSlugs.filter(s => !mainSlugs.has(s));
+        if (newSlugs.length > 0) {
+          const bonusItems = await batchGetStories(newSlugs);
+          const bonusBySlug = new Map(bonusItems.map(item => [item.id as string, item]));
+          const bonusStories = newSlugs
+            .map(slug => bonusBySlug.get(slug))
+            .filter(Boolean) as unknown as Story[];
+          stories = [...stories, ...bonusStories];
+        }
+      }
+    } catch {
+      // Bonus fetch failed — continue with main stories only
+    }
+  }
+
   return NextResponse.json({
     stories,
     narratives,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { Story, Narrative, Obfuscation, TickerItem, NarrativeAnalysis, SuppressedSearchEntry } from '@/types';
@@ -30,6 +30,7 @@ export default function Home() {
 
   // Data state — empty until API responds
   const [stories, setStories] = useState<Story[]>([]);
+  const [bonusStories, setBonusStories] = useState<Map<string, Story[]>>(new Map());
   const [narratives, setNarratives] = useState<Narrative[]>([]);
   const [obfuscations, setObfuscations] = useState<Obfuscation[]>([]);
   const [tickerItems, setTickerItems] = useState<TickerItem[]>([]);
@@ -83,10 +84,31 @@ export default function Home() {
     [router]
   );
 
-  const filteredStories =
-    activeFilter === 'all'
-      ? stories
-      : stories.filter((s) => s.category === activeFilter);
+  // Lazy-load bonus stories for finance/science filters
+  useEffect(() => {
+    if (activeFilter !== 'finance' && activeFilter !== 'science') return;
+    if (bonusStories.has(activeFilter)) return;
+    if (stories.length === 0) return;
+
+    fetch(`/api/stories?category=${activeFilter}`)
+      .then(res => res.json())
+      .then(data => {
+        const mainSlugs = new Set(stories.map(s => s.slug));
+        const bonus = (data.stories ?? []).filter((s: Story) => !mainSlugs.has(s.slug));
+        setBonusStories(prev => new Map(prev).set(activeFilter, bonus));
+      })
+      .catch(() => {});
+  }, [activeFilter, stories, bonusStories]);
+
+  const filteredStories = useMemo(() => {
+    if (activeFilter === 'all') return stories;
+    const mainFiltered = stories.filter((s) => s.category === activeFilter);
+    if (activeFilter === 'finance' || activeFilter === 'science') {
+      const bonus = bonusStories.get(activeFilter) ?? [];
+      return [...mainFiltered, ...bonus];
+    }
+    return mainFiltered;
+  }, [activeFilter, stories, bonusStories]);
 
   if (loading) {
     return (

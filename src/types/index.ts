@@ -56,6 +56,7 @@ export interface Story {
   realAnalysis: string;
   deepDive: DeepDive;
   sourceNetwork?: SourceNetwork;
+  bonus?: boolean;
 }
 
 export interface Analysis {

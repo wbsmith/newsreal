@@ -89,6 +89,7 @@ interface Story {
   realAnalysis: string;
   deepDive: DeepDive;
   sourceNetwork?: SourceNetwork;
+  bonus?: boolean;
 }
 
 interface SourceArticle { slug: string; headline: string; sourceUrl: string; }
@@ -154,6 +155,8 @@ const ARTICLE_TEXT_LIMIT_HAIKU = 2000;  // chars for classify prompt
 const ARTICLE_TEXT_LIMIT_SONNET = 5000; // chars for analysis prompt
 
 const ALL_CATEGORIES: Category[] = ['politics', 'tech', 'finance', 'world', 'science', 'deep-state'];
+const BONUS_CATEGORIES: Category[] = ['finance', 'science'];
+const BONUS_PER_CATEGORY = 15;
 
 const TABLE_PREFIX = 'newsreal';
 const TABLES = {
@@ -239,6 +242,31 @@ async function fetchFeed(url: string, sourceName: string): Promise<FeedItem[]> {
   }));
 }
 
+async function fetchReddit(subreddit: string, sourceName: string, limit = 20): Promise<FeedItem[]> {
+  const url = `https://www.reddit.com/r/${subreddit}.json?limit=${limit}&raw_json=1`;
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'newsreal-bot/1.0' },
+  });
+  if (!res.ok) throw new Error(`Reddit ${res.status}: ${res.statusText}`);
+  const json = await res.json();
+  const posts = json?.data?.children || [];
+  return posts
+    .filter((p: any) => p.data && !p.data.stickied)
+    .map((p: any) => ({
+      title: p.data.title || '',
+      link: p.data.url || `https://www.reddit.com${p.data.permalink}`,
+      pubDate: new Date((p.data.created_utc || 0) * 1000).toISOString(),
+      contentSnippet: p.data.selftext?.slice(0, 500) || '',
+      source: sourceName,
+    }));
+}
+
+const REDDIT_FEEDS: { subreddit: string; name: string; hintCategory?: Category; limit?: number }[] = [
+  { subreddit: 'wallstreetbets', name: 'r/wallstreetbets', hintCategory: 'finance', limit: 20 },
+  { subreddit: 'stocks', name: 'r/stocks', hintCategory: 'finance', limit: 20 },
+  { subreddit: 'economics', name: 'r/economics', hintCategory: 'finance', limit: 20 },
+];
+
 const GNEWS_SEARCH = 'https://news.google.com/rss/search?hl=en-US&gl=US&ceid=US:en&q=';
 
 const ALL_FEEDS: { url: string; name: string; hintCategory?: Category }[] = [
@@ -273,6 +301,15 @@ const ALL_FEEDS: { url: string; name: string; hintCategory?: Category }[] = [
   { url: `${GNEWS_SEARCH}${encodeURIComponent('"cryptocurrency" OR "bitcoin" OR "ethereum"')}`, name: 'Crypto News', hintCategory: 'finance' },
   { url: `${GNEWS_SEARCH}${encodeURIComponent('site:bloomberg.com')}`, name: 'Bloomberg', hintCategory: 'finance' },
   { url: `${GNEWS_SEARCH}${encodeURIComponent('"Wall Street" OR "stock market" OR "IPO"')}`, name: 'Markets', hintCategory: 'finance' },
+  // Direct finance feeds
+  { url: 'https://feeds.marketwatch.com/marketwatch/topstories', name: 'MarketWatch', hintCategory: 'finance' },
+  { url: 'https://seekingalpha.com/feed.xml', name: 'Seeking Alpha', hintCategory: 'finance' },
+  { url: 'https://finance.yahoo.com/news/rssindex', name: 'Yahoo Finance', hintCategory: 'finance' },
+  // Alternative / skeptical finance
+  { url: 'https://feeds.feedburner.com/zerohedge/feed', name: 'ZeroHedge', hintCategory: 'finance' },
+  { url: 'https://wolfstreet.com/feed/', name: 'Wolf Street', hintCategory: 'finance' },
+  { url: 'https://www.nakedcapitalism.com/feed', name: 'Naked Capitalism', hintCategory: 'finance' },
+  { url: 'https://www.calculatedriskblog.com/feeds/posts/default?alt=rss', name: 'Calculated Risk', hintCategory: 'finance' },
 
   // ─── Science (direct journal feeds first for priority) ───
   { url: 'https://www.nature.com/nature.rss', name: 'Nature', hintCategory: 'science' },
@@ -329,15 +366,22 @@ const ALL_FEEDS: { url: string; name: string; hintCategory?: Category }[] = [
 ];
 
 async function fetchAllFeeds(): Promise<{ items: FeedItem[]; sourceErrors: number; errorDetails: string[] }> {
-  const results = await Promise.allSettled(
-    ALL_FEEDS.map(async (f) => {
-      const items = await fetchFeed(f.url, f.name);
-      if (f.hintCategory) {
-        return { name: f.name, items: items.map((item) => ({ ...item, hintCategory: f.hintCategory })) };
-      }
-      return { name: f.name, items };
-    })
-  );
+  const rssPromises = ALL_FEEDS.map(async (f) => {
+    const items = await fetchFeed(f.url, f.name);
+    if (f.hintCategory) {
+      return { name: f.name, items: items.map((item) => ({ ...item, hintCategory: f.hintCategory })) };
+    }
+    return { name: f.name, items };
+  });
+  const redditPromises = REDDIT_FEEDS.map(async (f) => {
+    const items = await fetchReddit(f.subreddit, f.name, f.limit);
+    if (f.hintCategory) {
+      return { name: f.name, items: items.map((item) => ({ ...item, hintCategory: f.hintCategory })) };
+    }
+    return { name: f.name, items };
+  });
+  const results = await Promise.allSettled([...rssPromises, ...redditPromises]);
+  const allFeedNames = [...ALL_FEEDS.map(f => f.name), ...REDDIT_FEEDS.map(f => f.name)];
   const items: FeedItem[] = [];
   let sourceErrors = 0;
   const errorDetails: string[] = [];
@@ -347,7 +391,7 @@ async function fetchAllFeeds(): Promise<{ items: FeedItem[]; sourceErrors: numbe
       items.push(...result.value.items);
     } else {
       sourceErrors++;
-      const feedName = ALL_FEEDS[i].name;
+      const feedName = allFeedNames[i];
       const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
       errorDetails.push(`${feedName}: ${reason}`);
       console.error(`Feed fetch failed [${feedName}]:`, reason);
@@ -1148,6 +1192,7 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
   // Step 3: Select and optionally fetch full article text
   stepStart = Date.now();
   const toClassify = selectForClassification(unique, CLASSIFY_COUNT, 25);
+  const mainUsedLinks = new Set(toClassify.map(item => item.link));
   if (ENABLE_ARTICLE_FETCH) {
     console.log(`Step 3: Fetching full article text for ${toClassify.length} stories...`);
     const { fetched: articlesFetched, failed: articlesFailed } = await fetchArticleTexts(toClassify);
@@ -1208,6 +1253,65 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
   stats.analyzed = analysisMap.size;
   console.log(`  Analysis complete: ${analysisMap.size} stories in ${analyzeDuration}s (wall clock)`);
   stepTime('Step 5', stepStart);
+
+  // Step 5b: Bonus category pass (extra finance/science content)
+  stepStart = Date.now();
+  console.log('Step 5b: Bonus category pass for finance/science...');
+  const bonusStories: Story[] = [];
+  const bonusManifests: Record<string, string[]> = {};
+  for (const bonusCat of BONUS_CATEGORIES) {
+    // Collect leftover items hinted for this category that weren't in the main pipeline
+    const leftovers = unique
+      .filter(item => item.hintCategory === bonusCat && !mainUsedLinks.has(item.link))
+      .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
+      .slice(0, BONUS_PER_CATEGORY);
+
+    if (leftovers.length === 0) {
+      console.log(`  [${bonusCat}] No leftover candidates`);
+      bonusManifests[bonusCat] = [];
+      continue;
+    }
+    console.log(`  [${bonusCat}] Classifying ${leftovers.length} bonus candidates...`);
+
+    // Classify with Haiku
+    const bonusClassResults = await batchProcess(leftovers, classifyStory, CLASSIFY_BATCH_SIZE);
+    const bonusClassified: { item: FeedItem; classification: Classification }[] = [];
+    for (let i = 0; i < bonusClassResults.length; i++) {
+      // Only keep items that Haiku confirms belong to this category
+      if (bonusClassResults[i] && bonusClassResults[i]!.category === bonusCat) {
+        bonusClassified.push({ item: leftovers[i], classification: bonusClassResults[i]! });
+      }
+    }
+    console.log(`  [${bonusCat}] ${bonusClassified.length}/${leftovers.length} confirmed as ${bonusCat}`);
+
+    if (bonusClassified.length === 0) {
+      bonusManifests[bonusCat] = [];
+      continue;
+    }
+
+    // Analyze with Sonnet
+    console.log(`  [${bonusCat}] Analyzing ${bonusClassified.length} bonus stories with Sonnet...`);
+    const bonusAnalysisResults = await batchProcess(bonusClassified, (c) => analyzeStory(c.item, c.classification), ANALYZE_BATCH_SIZE);
+
+    // Build Story objects
+    const baseIndex = sorted.length + bonusStories.length;
+    for (let i = 0; i < bonusClassified.length; i++) {
+      const story = feedItemToStory(
+        bonusClassified[i].item, bonusClassified[i].classification,
+        bonusAnalysisResults[i] ?? null, baseIndex + i,
+        clustersByLink.get(bonusClassified[i].item.link)
+      );
+      story.featured = false;
+      story.bonus = true;
+      bonusStories.push(story);
+    }
+    bonusManifests[bonusCat] = bonusStories
+      .filter(s => s.category === bonusCat)
+      .map(s => s.slug);
+    console.log(`  [${bonusCat}] ${bonusManifests[bonusCat].length} bonus stories ready`);
+  }
+  stats.bonusStories = bonusStories.length;
+  stepTime('Step 5b', stepStart);
 
   // Step 6: Build Story objects (with source network from dedup clusters)
   const stories: Story[] = sorted.map((c, i) => feedItemToStory(c.item, c.classification, analysisMap.get(i) ?? null, i, clustersByLink.get(c.item.link)));
@@ -1458,12 +1562,13 @@ Respond in JSON:
   stats.searchAnalyses = searchAnalyses.filter(e => e.analysis).length;
   stepTime('Step 7c', stepStart);
 
-  // Step 8: Store each story individually in DynamoDB
+  // Step 8: Store each story individually in DynamoDB (main + bonus)
   stepStart = Date.now();
-  console.log('Step 8: Storing stories to DynamoDB...');
+  const allStoriesToStore = [...stories, ...bonusStories];
+  console.log(`Step 8: Storing ${allStoriesToStore.length} stories to DynamoDB (${stories.length} main + ${bonusStories.length} bonus)...`);
   const publishedAt = new Date().toISOString();
   const storeResults = await Promise.allSettled(
-    stories.map((story) =>
+    allStoriesToStore.map((story) =>
       putStory({ ...story, id: story.slug, publishedAt })
     )
   );
@@ -1488,6 +1593,14 @@ Respond in JSON:
     setCached('pipeline-last-run', Date.now(), CACHE_TTL),
   ];
   const bulkCacheKeys = ['homepage-manifest', 'homepage-narratives', 'homepage-obfuscations', 'homepage-ticker', 'homepage-suppressed', 'homepage-narrative-analyses', 'homepage-search-analyses', 'pipeline-last-run'];
+
+  // Bonus category manifests
+  for (const bonusCat of BONUS_CATEGORIES) {
+    const slugs = bonusManifests[bonusCat] || [];
+    bulkCacheOps.push(setCached(`homepage-bonus-${bonusCat}`, slugs, CACHE_TTL));
+    bulkCacheKeys.push(`homepage-bonus-${bonusCat}`);
+    console.log(`  Bonus manifest for ${bonusCat}: ${slugs.length} stories`);
+  }
 
   // Individual narrative analysis cache entries
   for (const na of narrativeAnalyses) {

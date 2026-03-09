@@ -8,7 +8,7 @@ import { LOADING_MESSAGES } from '@/lib/loading-messages';
 import Header from '@/components/Header';
 import DisclaimerBanner from '@/components/DisclaimerBanner';
 import Ticker from '@/components/Ticker';
-import StoryGrid from '@/components/StoryGrid';
+import StoryCard from '@/components/StoryCard';
 import StoryModal from '@/components/StoryModal';
 import NarrativeTracker, { NarrativeTrackerHandle } from '@/components/NarrativeTracker';
 import ObfuscationIndex from '@/components/ObfuscationIndex';
@@ -145,17 +145,39 @@ export default function Home() {
           <Ticker items={tickerItems} onItemClick={handleTickerClick} />
         )}
         <div className="content-layout">
-          <div className="stories-column">
-            <StoryGrid
-              stories={filteredStories}
-              onStoryClick={setSelectedStory}
-            />
+          <div className="stories-top">
+            <div className="stories-section-header">
+              <h2>Today&apos;s Narrative Landscape</h2>
+              <div className="line" />
+              <div className="count">{filteredStories.length} STORIES DECODED</div>
+            </div>
+            {filteredStories.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-state-message">AWAITING SIGNAL INTERCEPT...</div>
+                <div className="empty-state-sub">Pipeline initializing. Stories will appear after the next ingestion cycle.</div>
+              </div>
+            ) : (
+              <div className="stories-grid">
+                {filteredStories.slice(0, 5).map((story) => (
+                  <StoryCard key={story.id} story={story} onClick={setSelectedStory} />
+                ))}
+              </div>
+            )}
           </div>
           <aside className="sidebar">
             <NarrativeTracker ref={narrativeRef} narratives={narratives} preloadedAnalyses={narrativeAnalyses} />
             <ObfuscationIndex obfuscations={obfuscations} />
             <SuppressedSearches searches={suppressedSearches} preloadedAnalyses={searchAnalyses} />
           </aside>
+          {filteredStories.length > 5 && (
+            <div className="stories-rest">
+              <div className="stories-grid">
+                {filteredStories.slice(5).map((story) => (
+                  <StoryCard key={story.id} story={story} onClick={setSelectedStory} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </main>
       <Footer />

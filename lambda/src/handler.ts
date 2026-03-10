@@ -403,6 +403,28 @@ function trigramCosineSim(
 }
 
 const DEDUP_THRESHOLD = 0.7;
+const DEDUP_TRIGRAM_SOFT = 0.45;
+const DEDUP_JACCARD_THRESHOLD = 0.4;
+
+// Stop words to ignore in word-level Jaccard comparison
+const STOP_WORDS = new Set(['the','a','an','and','or','but','in','on','at','to','for','of','with','by','from','is','are','was','were','be','been','being','has','have','had','do','does','did','will','would','could','should','may','might','shall','can','not','no','its','it','this','that','these','those','as','into','than','new','says','said','after','over','about','up']);
+
+function wordJaccard(a: string, b: string): number {
+  const wordsA = new Set(a.toLowerCase().split(/\s+/).filter(w => w.length > 2 && !STOP_WORDS.has(w)));
+  const wordsB = new Set(b.toLowerCase().split(/\s+/).filter(w => w.length > 2 && !STOP_WORDS.has(w)));
+  if (wordsA.size === 0 || wordsB.size === 0) return 0;
+  let intersection = 0;
+  for (const w of wordsA) if (wordsB.has(w)) intersection++;
+  return intersection / (wordsA.size + wordsB.size - intersection);
+}
+
+function isDuplicatePair(trigramSim: number, titleA: string, titleB: string): boolean {
+  // Strong trigram match → definite duplicate
+  if (trigramSim >= DEDUP_THRESHOLD) return true;
+  // Moderate trigram + significant word overlap → semantic duplicate
+  if (trigramSim >= DEDUP_TRIGRAM_SOFT && wordJaccard(titleA, titleB) >= DEDUP_JACCARD_THRESHOLD) return true;
+  return false;
+}
 
 function addToCluster(
   clusters: Map<number, SourceCluster>, idx: number,
@@ -443,11 +465,11 @@ function deduplicateStories(items: FeedItem[]): { unique: FeedItem[]; duplicates
     const tVec = buildTrigrams(titleLower);
     const tMag = trigramMagnitude(tVec);
 
-    // Compare against all existing unique items
+    // Compare against all existing unique items (hybrid: trigram cosine + word Jaccard)
     let isDuplicate = false;
     for (let i = 0; i < trigrams.length; i++) {
       const sim = trigramCosineSim(tVec, tMag, trigrams[i], magnitudes[i]);
-      if (sim >= DEDUP_THRESHOLD) {
+      if (sim >= DEDUP_TRIGRAM_SOFT && isDuplicatePair(sim, titleLower, unique[i].title)) {
         addToCluster(clusters, i, unique[i], item, sim);
         isDuplicate = true;
         duplicates++;
@@ -1229,10 +1251,30 @@ async function runFullPipeline(): Promise<Record<string, unknown>> {
   console.log('Step 5b: Bonus category pass for finance/science...');
   const bonusStories: Story[] = [];
   const bonusManifests: Record<string, string[]> = {};
+
+  // Build trigram vectors for main pipeline stories to dedup bonus candidates against
+  const mainTrigrams = toClassify.map(item => {
+    const vec = buildTrigrams(item.title.toLowerCase().trim());
+    return { vec, mag: trigramMagnitude(vec) };
+  });
+
   for (const bonusCat of BONUS_CATEGORIES) {
     // Collect leftover items hinted for this category that weren't in the main pipeline
+    // Filter by both link URL AND title similarity against main pipeline stories
     const leftovers = unique
-      .filter(item => item.hintCategory === bonusCat && !mainUsedLinks.has(item.link))
+      .filter(item => {
+        if (item.hintCategory !== bonusCat) return false;
+        if (mainUsedLinks.has(item.link)) return false;
+        // Check title similarity against all main pipeline stories (hybrid check)
+        const titleLow = item.title.toLowerCase().trim();
+        const vec = buildTrigrams(titleLow);
+        const mag = trigramMagnitude(vec);
+        for (let mi = 0; mi < mainTrigrams.length; mi++) {
+          const sim = trigramCosineSim(vec, mag, mainTrigrams[mi].vec, mainTrigrams[mi].mag);
+          if (sim >= DEDUP_TRIGRAM_SOFT && isDuplicatePair(sim, titleLow, toClassify[mi].title)) return false;
+        }
+        return true;
+      })
       .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
       .slice(0, BONUS_PER_CATEGORY);
 

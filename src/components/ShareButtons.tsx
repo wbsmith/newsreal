@@ -35,12 +35,16 @@ export default function ShareButton({ url, title }: ShareButtonProps) {
   }, [open]);
 
   function trackShare() {
-    const slug = url.replace(/.*\/story\//, '').replace(/\/$/, '');
-    if (slug && slug !== url) {
+    const storyMatch = url.match(/\/story\/(.+?)(?:\/|$)/);
+    const narrativeMatch = url.match(/\/narrative\/(.+?)(?:\/|$)/);
+    const searchMatch = url.match(/\/search-analysis\/(.+?)(?:\/|$)/);
+    const contentType = storyMatch ? 'story' : narrativeMatch ? 'narrative' : searchMatch ? 'search' : null;
+    const contentId = storyMatch?.[1] || narrativeMatch?.[1] || (searchMatch?.[1] && decodeURIComponent(searchMatch[1]));
+    if (contentType && contentId) {
       fetch('/api/track', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event: 'share', slug }),
+        body: JSON.stringify({ event: 'share', contentType, contentId }),
       }).catch(() => {});
     }
   }

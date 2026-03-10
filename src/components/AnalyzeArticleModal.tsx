@@ -4,8 +4,8 @@ import { useState } from 'react';
 import { Story } from '@/types';
 import BiasTag from './BiasTag';
 import ManipulationMeter from './ManipulationMeter';
-import RedactedText from './RedactedText';
 import AnalysisModal from './AnalysisModal';
+import StoryAnalysisSections from './StoryAnalysisSections';
 
 interface AnalyzeArticleModalProps {
   open: boolean;
@@ -200,6 +200,9 @@ export default function AnalyzeArticleModal({ open, onClose }: AnalyzeArticleMod
 
   // Results phase
   const story = result!;
+  const siteUrl = typeof window !== 'undefined' ? window.location.origin : 'https://www.newsreal.ai';
+  const shareUrl = `${siteUrl}/story/${story.slug}`;
+
   const header = (
     <>
       <div className="story-meta">
@@ -216,63 +219,14 @@ export default function AnalyzeArticleModal({ open, onClose }: AnalyzeArticleMod
   );
 
   return (
-    <AnalysisModal open={open} onClose={handleClose} header={header}>
-      <div className="modal-section">
-        <div className="modal-section-title">
-          {'\u25C8'} AI DEEP ANALYSIS <span className="blink">{'\u258A'}</span>
-        </div>
-        <p className="analysis-text speculation">
-          <RedactedText text={story.realAnalysis} />
-        </p>
-      </div>
-
-      {story.deepDive && (
-        <>
-          <div className="modal-section">
-            <div className="modal-section-title">
-              {'\uD83D\uDCFA'} THE MAINSTREAM FRAME
-            </div>
-            <p className="analysis-text">{story.deepDive.mainstream}</p>
-          </div>
-
-          <div className="modal-section">
-            <div className="modal-section-title">
-              {'\uD83D\uDD13'} THE REAL STORY (SPECULATIVE)
-            </div>
-            <p className="analysis-text speculation">{story.deepDive.realStory}</p>
-          </div>
-
-          <div className="modal-section">
-            <div className="modal-section-title">
-              {'\u2696\uFE0F'} BIAS BREAKDOWN
-            </div>
-            <div className="bias-breakdown">
-              <div className="bias-card left-lean">
-                <h4>{'\u25C0'} Left-Leaning Frame</h4>
-                <p>{story.deepDive.leftSpin}</p>
-              </div>
-              <div className="bias-card right-lean">
-                <h4>Right-Leaning Frame {'\u25B6'}</h4>
-                <p>{story.deepDive.rightSpin}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="modal-section">
-            <div className="modal-section-title">
-              {'\uD83D\uDCB0'} WHO BENEFITS?
-            </div>
-            <p className="analysis-text">{story.deepDive.whosBenefiting}</p>
-          </div>
-
-          <div className="modal-section">
-            <div className="modal-section-title">
-              {'\uD83D\uDD73'} WHAT&apos;S BEING HIDDEN
-            </div>
-            <p className="analysis-text speculation">{story.deepDive.whatsHidden}</p>
-          </div>
-        </>
-      )}
+    <AnalysisModal
+      open={open}
+      onClose={handleClose}
+      header={header}
+      shareUrl={published ? shareUrl : undefined}
+      shareTitle={story.headline}
+    >
+      <StoryAnalysisSections story={story} />
 
       <div className="modal-section" style={{ textAlign: 'center', display: 'flex', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
         {story.sourceUrl && (
@@ -294,7 +248,9 @@ export default function AnalyzeArticleModal({ open, onClose }: AnalyzeArticleMod
             {publishing ? '[PUBLISHING...]' : '[PUBLISH TO SITE]'}
           </button>
         ) : (
-          <span className="dossier-link published">[PUBLISHED]</span>
+          <a href={`/story/${story.slug}`} className="dossier-link published">
+            [PUBLISHED — VIEW DOSSIER]
+          </a>
         )}
         <button className="dossier-link" onClick={reset}>
           [ANALYZE ANOTHER]

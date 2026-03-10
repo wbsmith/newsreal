@@ -36,7 +36,7 @@ const SuppressedSearches = forwardRef<SuppressedSearchesHandle, SuppressedSearch
     setLoading(true);
     setAnalysis(null);
     try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+      const res = await fetch(`/api/suppressed-search?q=${encodeURIComponent(query)}`);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || `Search failed (${res.status})`);

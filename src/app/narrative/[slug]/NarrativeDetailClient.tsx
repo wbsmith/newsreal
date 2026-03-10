@@ -1,19 +1,20 @@
 'use client';
 
-import { SearchAnalysis } from '@/types';
+import { NarrativeAnalysis } from '@/types';
 import Header from '@/components/Header';
 import DisclaimerBanner from '@/components/DisclaimerBanner';
 import ShareButton from '@/components/ShareButtons';
-import SearchAnalysisSections from '@/components/SearchAnalysisSections';
+import NarrativeAnalysisSections from '@/components/NarrativeAnalysisSections';
 import Footer from '@/components/Footer';
 
-interface SearchDetailClientProps {
-  analysis: SearchAnalysis;
+interface NarrativeDetailClientProps {
+  analysis: NarrativeAnalysis;
 }
 
-export default function SearchDetailClient({ analysis }: SearchDetailClientProps) {
+export default function NarrativeDetailClient({ analysis }: NarrativeDetailClientProps) {
   const siteUrl = typeof window !== 'undefined' ? window.location.origin : 'https://www.newsreal.ai';
-  const pageUrl = `${siteUrl}/search-analysis/${encodeURIComponent(analysis.query)}`;
+  const pageUrl = `${siteUrl}/narrative/${analysis.slug}`;
+  const plainText = analysis.narrativeText.replace(/<[^>]*>/g, '');
 
   return (
     <>
@@ -22,14 +23,14 @@ export default function SearchDetailClient({ analysis }: SearchDetailClientProps
       <main className="main-content">
         <div className="story-detail">
           <div className="story-meta">
-            <span className="story-source">SEARCH INTERCEPT</span>
+            <span className="story-source">NARRATIVE DECODE</span>
             <span className="story-time">
               {new Date(analysis.analysisDate).toLocaleString()}
             </span>
           </div>
 
           <h1 className="story-headline" style={{ fontSize: '30px', marginBottom: '16px' }}>
-            {'\uD83D\uDD0D'} &quot;{analysis.query}&quot;
+            <span dangerouslySetInnerHTML={{ __html: analysis.narrativeText }} />
           </h1>
           <p
             style={{
@@ -40,12 +41,12 @@ export default function SearchDetailClient({ analysis }: SearchDetailClientProps
               marginTop: '4px',
             }}
           >
-            {analysis.resultCount} RESULTS INTERCEPTED / {analysis.searchResults.length} ANALYZED
+            COHERENCE: {analysis.coherenceScore}% / {analysis.outletsInvolved.length} OUTLETS DETECTED
           </p>
 
-          <ShareButton url={pageUrl} title={`"${analysis.query}" — Suppressed Search`} />
+          <ShareButton url={pageUrl} title={plainText} />
 
-          <SearchAnalysisSections analysis={analysis} />
+          <NarrativeAnalysisSections analysis={analysis} />
 
           <div className="modal-section" style={{ textAlign: 'center' }}>
             <p
@@ -57,7 +58,7 @@ export default function SearchDetailClient({ analysis }: SearchDetailClientProps
                 textTransform: 'uppercase',
               }}
             >
-              {'\u26A0'} This analysis is AI-generated speculation based on search results.
+              {'\u26A0'} This analysis is AI-generated speculation about narrative patterns.
               Verify all claims independently. Trust no single source &mdash; including us.
             </p>
           </div>

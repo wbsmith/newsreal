@@ -6,6 +6,8 @@ interface DailyAnalytics {
   pageviews: number;
   uniqueIPs: string[];
   storyViews: Record<string, number>;
+  narrativeViews: Record<string, number>;
+  searchViews: Record<string, number>;
   shares: Record<string, number>;
   topPages: Record<string, number>;
 }
@@ -58,14 +60,20 @@ export async function POST(request: NextRequest) {
       pageviews: 0,
       uniqueIPs: [],
       storyViews: {},
+      narrativeViews: {},
+      searchViews: {},
       shares: {},
       topPages: {},
     };
 
     const ipHash = hashIP(ip, date);
 
-    if (body.event === 'share' && body.slug) {
-      current.shares[body.slug] = (current.shares[body.slug] || 0) + 1;
+    if (body.event === 'share') {
+      // Support both old format (slug) and new format (contentType + contentId)
+      const shareKey = body.contentId
+        ? `${body.contentType}:${body.contentId}`
+        : body.slug || 'unknown';
+      current.shares[shareKey] = (current.shares[shareKey] || 0) + 1;
     } else {
       current.pageviews++;
 
@@ -76,11 +84,19 @@ export async function POST(request: NextRequest) {
       if (body.path) {
         current.topPages[body.path] = (current.topPages[body.path] || 0) + 1;
 
-        // Track story views by slug
-        const storyMatch = body.path.match(/^\/story\/(.+)$/);
+        // Track content views by type
+        const storyMatch = body.path.match(/^\/story\/(.+?)(?:\/|$)/);
+        const narrativeMatch = body.path.match(/^\/narrative\/(.+?)(?:\/|$)/);
+        const searchMatch = body.path.match(/^\/search-analysis\/(.+?)(?:\/|$)/);
         if (storyMatch) {
-          const slug = storyMatch[1];
-          current.storyViews[slug] = (current.storyViews[slug] || 0) + 1;
+          current.storyViews[storyMatch[1]] = (current.storyViews[storyMatch[1]] || 0) + 1;
+        } else if (narrativeMatch) {
+          if (!current.narrativeViews) current.narrativeViews = {};
+          current.narrativeViews[narrativeMatch[1]] = (current.narrativeViews[narrativeMatch[1]] || 0) + 1;
+        } else if (searchMatch) {
+          if (!current.searchViews) current.searchViews = {};
+          const decoded = decodeURIComponent(searchMatch[1]);
+          current.searchViews[decoded] = (current.searchViews[decoded] || 0) + 1;
         }
       }
     }

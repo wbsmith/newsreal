@@ -1,15 +1,20 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, forwardRef, useImperativeHandle } from 'react';
 import { SearchAnalysis, SuppressedSearchEntry } from '@/types';
 import SearchAnalysisModal from './SearchAnalysisModal';
+
+export interface SuppressedSearchesHandle {
+  analyzeSearch: (query: string) => void;
+}
 
 interface SuppressedSearchesProps {
   searches: string[];
   preloadedAnalyses?: SuppressedSearchEntry[];
 }
 
-export default function SuppressedSearches({ searches, preloadedAnalyses }: SuppressedSearchesProps) {
+const SuppressedSearches = forwardRef<SuppressedSearchesHandle, SuppressedSearchesProps>(
+  function SuppressedSearches({ searches, preloadedAnalyses }, ref) {
   const [analysis, setAnalysis] = useState<SearchAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +49,12 @@ export default function SuppressedSearches({ searches, preloadedAnalyses }: Supp
       setLoading(false);
     }
   }
+
+  useImperativeHandle(ref, () => ({
+    analyzeSearch(query: string) {
+      handleSearch(query);
+    },
+  }));
 
   function handleClose() {
     setAnalysis(null);
@@ -93,4 +104,6 @@ export default function SuppressedSearches({ searches, preloadedAnalyses }: Supp
       />
     </div>
   );
-}
+});
+
+export default SuppressedSearches;

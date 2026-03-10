@@ -115,6 +115,44 @@ export async function batchGetStories(slugs: string[]): Promise<Record<string, u
   return results;
 }
 
+export async function searchStories(query: string, limit = 20): Promise<Record<string, unknown>[]> {
+  const db = getDynamoDB();
+  if (!db) return [];
+
+  const q = query.toLowerCase();
+  const allItems: Record<string, unknown>[] = [];
+  let lastKey: Record<string, unknown> | undefined;
+
+  // Paginated scan — pull up to 500 items, filter in JS for case-insensitive match
+  do {
+    const result = await db.send(
+      new ScanCommand({
+        TableName: TABLES.stories,
+        Limit: 200,
+        ExclusiveStartKey: lastKey,
+      })
+    );
+    const items = result.Items ?? [];
+    for (const item of items) {
+      const headline = (item.headline as string || '').toLowerCase();
+      const summary = (item.summary as string || '').toLowerCase();
+      if (headline.includes(q) || summary.includes(q)) {
+        allItems.push(item);
+      }
+    }
+    lastKey = result.LastEvaluatedKey;
+  } while (lastKey && allItems.length < 500);
+
+  // Sort by publishedAt descending, cap at limit
+  allItems.sort((a, b) => {
+    const ta = new Date(a.publishedAt as string || 0).getTime();
+    const tb = new Date(b.publishedAt as string || 0).getTime();
+    return tb - ta;
+  });
+
+  return allItems.slice(0, limit);
+}
+
 // ─── Analysis Operations ───
 
 export async function putAnalysis(analysis: Record<string, unknown>) {

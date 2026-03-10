@@ -13,6 +13,7 @@ import StoryModal from '@/components/StoryModal';
 import NarrativeTracker, { NarrativeTrackerHandle } from '@/components/NarrativeTracker';
 import ObfuscationIndex from '@/components/ObfuscationIndex';
 import SuppressedSearches from '@/components/SuppressedSearches';
+import AnalyzeArticleModal from '@/components/AnalyzeArticleModal';
 import Footer from '@/components/Footer';
 
 export default function Home() {
@@ -27,6 +28,14 @@ export default function Home() {
     return 'all';
   });
   const [selectedStory, setSelectedStory] = useState<Story | null>(null);
+
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [archiveResults, setArchiveResults] = useState<Story[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+
+  // Analyze article modal
+  const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
 
   // Data state — empty until API responds
   const [stories, setStories] = useState<Story[]>([]);
@@ -84,6 +93,29 @@ export default function Home() {
     [router]
   );
 
+  const handleSearch = useCallback(async (query: string) => {
+    setSearchQuery(query);
+    setSearchLoading(true);
+    try {
+      const res = await fetch(`/api/search-stories?q=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      if (data.results) {
+        // Filter out stories already loaded on the page
+        const loadedSlugs = new Set(stories.map(s => s.slug));
+        setArchiveResults(data.results.filter((s: Story) => !loadedSlugs.has(s.slug)));
+      }
+    } catch {
+      setArchiveResults([]);
+    } finally {
+      setSearchLoading(false);
+    }
+  }, [stories]);
+
+  const handleSearchClear = useCallback(() => {
+    setSearchQuery('');
+    setArchiveResults([]);
+  }, []);
+
   // Lazy-load bonus stories for finance/science filters
   useEffect(() => {
     if (activeFilter !== 'finance' && activeFilter !== 'science') return;
@@ -101,14 +133,30 @@ export default function Home() {
   }, [activeFilter, stories, bonusStories]);
 
   const filteredStories = useMemo(() => {
-    if (activeFilter === 'all') return stories;
-    const mainFiltered = stories.filter((s) => s.category === activeFilter);
-    if (activeFilter === 'finance' || activeFilter === 'science') {
-      const bonus = bonusStories.get(activeFilter) ?? [];
-      return [...mainFiltered, ...bonus];
+    let base: Story[];
+    if (activeFilter === 'all') {
+      base = stories;
+    } else {
+      const mainFiltered = stories.filter((s) => s.category === activeFilter);
+      if (activeFilter === 'finance' || activeFilter === 'science') {
+        const bonus = bonusStories.get(activeFilter) ?? [];
+        base = [...mainFiltered, ...bonus];
+      } else {
+        base = mainFiltered;
+      }
     }
-    return mainFiltered;
-  }, [activeFilter, stories, bonusStories]);
+
+    // Client-side search filter
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      return base.filter(s =>
+        s.headline.toLowerCase().includes(q) ||
+        s.summary.toLowerCase().includes(q)
+      );
+    }
+
+    return base;
+  }, [activeFilter, stories, bonusStories, searchQuery]);
 
   if (loading) {
     return (
@@ -138,7 +186,13 @@ export default function Home() {
 
   return (
     <>
-      <Header activeFilter={activeFilter} onFilterChange={setActiveFilter} />
+      <Header
+        activeFilter={activeFilter}
+        onFilterChange={setActiveFilter}
+        onSearch={handleSearch}
+        onSearchClear={handleSearchClear}
+        onAnalyzeClick={() => setShowAnalyzeModal(true)}
+      />
       <DisclaimerBanner />
       <main className="main-content">
         {tickerItems.length > 0 && (
@@ -147,14 +201,20 @@ export default function Home() {
         <div className="content-layout">
           <div className="stories-top">
             <div className="stories-section-header">
-              <h2>Today&apos;s Narrative Landscape</h2>
+              <h2>{searchQuery ? `Search: "${searchQuery}"` : 'Today\u2019s Narrative Landscape'}</h2>
               <div className="line" />
-              <div className="count">{filteredStories.length} STORIES DECODED</div>
+              <div className="count">{filteredStories.length} STORIES {searchQuery ? 'FOUND' : 'DECODED'}</div>
             </div>
             {filteredStories.length === 0 ? (
               <div className="empty-state">
-                <div className="empty-state-message">AWAITING SIGNAL INTERCEPT...</div>
-                <div className="empty-state-sub">Pipeline initializing. Stories will appear after the next ingestion cycle.</div>
+                <div className="empty-state-message">
+                  {searchQuery ? 'NO MATCHING SIGNALS...' : 'AWAITING SIGNAL INTERCEPT...'}
+                </div>
+                <div className="empty-state-sub">
+                  {searchQuery
+                    ? 'No stories match your search on this page. Check archive results below.'
+                    : 'Pipeline initializing. Stories will appear after the next ingestion cycle.'}
+                </div>
               </div>
             ) : (
               <div className="stories-grid">
@@ -178,12 +238,42 @@ export default function Home() {
               </div>
             </div>
           )}
+          {searchQuery && (
+            <div className="stories-rest">
+              <div className="stories-section-header">
+                <h2>Archive Results</h2>
+                <div className="line" />
+                <div className="count">
+                  {searchLoading ? 'SCANNING...' : `${archiveResults.length} ARCHIVED`}
+                </div>
+              </div>
+              {searchLoading ? (
+                <div className="empty-state">
+                  <div className="empty-state-message">SCANNING ARCHIVES...</div>
+                </div>
+              ) : archiveResults.length > 0 ? (
+                <div className="stories-grid">
+                  {archiveResults.map((story) => (
+                    <StoryCard key={story.slug} story={story} onClick={setSelectedStory} />
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <div className="empty-state-message">NO ARCHIVED SIGNALS FOUND</div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </main>
       <Footer />
       <StoryModal
         story={selectedStory}
         onClose={() => setSelectedStory(null)}
+      />
+      <AnalyzeArticleModal
+        open={showAnalyzeModal}
+        onClose={() => setShowAnalyzeModal(false)}
       />
     </>
   );

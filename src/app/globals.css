@@ -1,6 +1,4 @@
 @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;0,900;1,400&family=JetBrains+Mono:wght@300;400;500&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,600;1,8..60,400&display=swap');
-@import "tailwindcss";
-
 :root {
   --bg-deep: #0a0a0c;
   --bg-card: #111116;
@@ -149,7 +147,6 @@ a { color: inherit; text-decoration: none; }
   padding: 12px 20px;
   cursor: pointer;
   position: relative;
-  transition: color 0.3s;
   white-space: nowrap;
 }
 
@@ -356,32 +353,17 @@ a { color: inherit; text-decoration: none; }
 .story-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
+  border-left: 3px solid transparent;
   border-radius: 6px;
   padding: 28px;
   cursor: pointer;
-  transition: background 0.3s, border-color 0.3s, box-shadow 0.3s;
-  position: relative;
-  overflow: hidden;
-}
-
-.story-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 3px;
-  height: 100%;
-  background: var(--accent-red);
-  opacity: 0;
 }
 
 .story-card:hover {
   background: var(--bg-card-hover);
   border-color: var(--border-glow);
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  border-left-color: var(--accent-red);
 }
-
-.story-card:hover::before { opacity: 1; }
 
 .story-card.featured {
   grid-column: 1 / -1;
@@ -393,7 +375,9 @@ a { color: inherit; text-decoration: none; }
   background: linear-gradient(135deg, var(--bg-card) 0%, rgba(198,40,40,0.03) 100%);
 }
 
-.story-card.featured::before { opacity: 1; }
+.story-card.featured {
+  border-left-color: var(--accent-red);
+}
 
 .story-meta {
   display: flex;
@@ -497,9 +481,6 @@ a { color: inherit; text-decoration: none; }
   padding: 0 8px;
 }
 
-.story-card:hover .story-real::before {
-  background: var(--bg-card-hover);
-}
 
 .story-real p {
   font-family: var(--font-mono);
@@ -695,14 +676,12 @@ a { color: inherit; text-decoration: none; }
   padding: 2px 8px;
   border-radius: 2px;
   text-decoration: none;
-  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
   white-space: nowrap;
 }
 
 .source-link-tag:hover {
   background: rgba(0, 188, 212, 0.1);
   border-color: var(--accent-cyan);
-  box-shadow: 0 0 8px rgba(0, 188, 212, 0.2);
 }
 
 /* ═══════════════════ SOURCE NETWORK ═══════════════════ */
@@ -736,7 +715,6 @@ a { color: inherit; text-decoration: none; }
   color: inherit;
   font-family: var(--font-mono);
   font-size: 13px;
-  transition: border-color 0.2s;
 }
 
 .source-network-entry:hover {
@@ -824,7 +802,6 @@ a { color: inherit; text-decoration: none; }
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.2s, color 0.2s;
 }
 
 .modal-close:hover {
@@ -929,7 +906,6 @@ a { color: inherit; text-decoration: none; }
   font-size: 14px;
   color: var(--accent-cyan);
   cursor: pointer;
-  transition: color 0.2s;
 }
 
 .search-item:last-child { border-bottom: none; }
@@ -967,7 +943,6 @@ a { color: inherit; text-decoration: none; }
   font-size: 12px;
   color: var(--text-secondary);
   text-decoration: none;
-  transition: border-color 0.2s, color 0.2s, background 0.2s;
   line-height: 1.4;
 }
 
@@ -1032,7 +1007,6 @@ a { color: inherit; text-decoration: none; }
   padding: 0 4px;
   border-radius: 2px;
   cursor: pointer;
-  transition: background 0.3s, color 0.3s;
   user-select: none;
 }
 
@@ -1059,7 +1033,6 @@ a { color: inherit; text-decoration: none; }
   letter-spacing: 1.5px;
   padding: 6px 12px;
   cursor: pointer;
-  transition: background 0.2s, color 0.2s, border-color 0.2s;
   text-transform: uppercase;
 }
 
@@ -1072,7 +1045,6 @@ a { color: inherit; text-decoration: none; }
 
 .share-icon {
   opacity: 0.7;
-  transition: opacity 0.2s;
 }
 
 .share-btn:hover {
@@ -1108,7 +1080,6 @@ a { color: inherit; text-decoration: none; }
   cursor: pointer;
   text-align: left;
   text-transform: uppercase;
-  transition: color 0.2s, background 0.2s;
 }
 
 .share-dropdown-item:hover {
@@ -1129,19 +1100,16 @@ a { color: inherit; text-decoration: none; }
   color: var(--accent-red);
   border: 1px solid var(--accent-red);
   padding: 10px 24px;
-  transition: background 0.2s, box-shadow 0.2s;
   text-decoration: none;
 }
 
 .dossier-link:hover {
   background: rgba(198, 40, 40, 0.1);
-  box-shadow: 0 0 12px rgba(198, 40, 40, 0.2);
 }
 
 /* ═══════════════════ CLICKABLE NARRATIVES ═══════════════════ */
 .narrative-item-clickable {
   cursor: pointer;
-  transition: background 0.2s;
 }
 
 .narrative-item-clickable:hover {
@@ -1163,7 +1131,6 @@ a { color: inherit; text-decoration: none; }
 /* ═══════════════════ CLICKABLE TICKER ═══════════════════ */
 .ticker-item-clickable {
   cursor: pointer;
-  transition: color 0.2s;
 }
 
 .ticker-item-clickable:hover {
@@ -1216,7 +1183,6 @@ a { color: inherit; text-decoration: none; }
   padding: 4px 8px;
   cursor: pointer;
   letter-spacing: 1px;
-  transition: color 0.2s, border-color 0.2s;
 }
 
 .header-icon-btn:hover {
@@ -1266,7 +1232,6 @@ a { color: inherit; text-decoration: none; }
   padding: 5px 14px;
   cursor: pointer;
   text-transform: uppercase;
-  transition: background 0.2s, color 0.2s;
 }
 
 .header-analyze-btn:hover {
@@ -1293,7 +1258,6 @@ a { color: inherit; text-decoration: none; }
   padding: 10px;
   cursor: pointer;
   text-transform: uppercase;
-  transition: background 0.2s, color 0.2s;
 }
 
 .analyze-tab:first-child {
@@ -1371,7 +1335,6 @@ a { color: inherit; text-decoration: none; }
   letter-spacing: 3px;
   text-transform: uppercase;
   cursor: pointer;
-  transition: background 0.2s;
 }
 
 .analyze-submit:hover:not(:disabled) {

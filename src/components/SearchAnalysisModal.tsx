@@ -17,7 +17,7 @@ export default function SearchAnalysisModal({
   onClose,
 }: SearchAnalysisModalProps) {
   const origin = typeof window !== 'undefined' ? window.location.origin : 'https://www.newsreal.ai';
-  const siteUrl = analysis?.query ? `${origin}?search=${encodeURIComponent(analysis.query)}` : origin;
+  const siteUrl = analysis?.query ? `${origin}/search-analysis/${encodeURIComponent(analysis.query)}` : origin;
 
   const header = analysis ? (
     <>

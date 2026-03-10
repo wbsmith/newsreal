@@ -12,14 +12,13 @@ import StoryCard from '@/components/StoryCard';
 import StoryModal from '@/components/StoryModal';
 import NarrativeTracker, { NarrativeTrackerHandle } from '@/components/NarrativeTracker';
 import ObfuscationIndex from '@/components/ObfuscationIndex';
-import SuppressedSearches, { SuppressedSearchesHandle } from '@/components/SuppressedSearches';
+import SuppressedSearches from '@/components/SuppressedSearches';
 import AnalyzeArticleModal from '@/components/AnalyzeArticleModal';
 import Footer from '@/components/Footer';
 
 export default function Home() {
   const router = useRouter();
   const narrativeRef = useRef<NarrativeTrackerHandle>(null);
-  const suppressedRef = useRef<SuppressedSearchesHandle>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMsg, setLoadingMsg] = useState(LOADING_MESSAGES[0]);
   const [activeFilter, setActiveFilter] = useState(() => {
@@ -83,18 +82,6 @@ export default function Home() {
     };
   }, []);
 
-  // Auto-open narrative/search analysis from shared URL params
-  useEffect(() => {
-    if (loading) return;
-    const params = new URLSearchParams(window.location.search);
-    const narrativeSlug = params.get('narrative');
-    const searchQuery = params.get('search');
-    if (narrativeSlug) {
-      narrativeRef.current?.analyzeNarrative(narrativeSlug);
-    } else if (searchQuery) {
-      suppressedRef.current?.analyzeSearch(searchQuery);
-    }
-  }, [loading]);
 
   const handleTickerClick = useCallback(
     (item: TickerItem) => {
@@ -241,7 +228,7 @@ export default function Home() {
           <aside className="sidebar">
             <NarrativeTracker ref={narrativeRef} narratives={narratives} preloadedAnalyses={narrativeAnalyses} />
             <ObfuscationIndex obfuscations={obfuscations} />
-            <SuppressedSearches ref={suppressedRef} searches={suppressedSearches} preloadedAnalyses={searchAnalyses} />
+            <SuppressedSearches searches={suppressedSearches} preloadedAnalyses={searchAnalyses} />
           </aside>
           {filteredStories.length > 5 && (
             <div className="stories-rest">

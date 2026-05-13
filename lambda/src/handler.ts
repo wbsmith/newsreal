@@ -150,6 +150,10 @@ const DEEP_ANALYZE_COUNT = Number(process.env.DEEP_ANALYZE_COUNT ?? 120);
 const CLASSIFY_MODEL = process.env.LOCAL_CLASSIFY_MODEL || 'nemotron-3-nano-omni';
 const ANALYZE_MODEL = process.env.LOCAL_ANALYZE_MODEL || 'gemma4-31b';
 const LLM_BASE_URL = process.env.LLM_BASE_URL || 'http://localhost:1234/v1';
+// Reasoning models burn tokens on internal thinking before emitting JSON.
+// Defaults assume ~3000 tokens of reasoning headroom + ~1000 of output.
+const CLASSIFY_MAX_TOKENS = Number(process.env.CLASSIFY_MAX_TOKENS ?? 4096);
+const ANALYZE_MAX_TOKENS = Number(process.env.ANALYZE_MAX_TOKENS ?? 8192);
 const CACHE_TTL = 43200; // 12 hours — pipeline runs 3x/day (every 8h)
 const ENABLE_ARTICLE_FETCH = false; // Feature flag: fetch full article text via Readability
 const ARTICLE_FETCH_BATCH_SIZE = 20;
@@ -542,7 +546,7 @@ async function classifyWithHaiku(prompt: string): Promise<string | null> {
   try {
     const response = await getLLM().chat.completions.create({
       model: CLASSIFY_MODEL,
-      max_tokens: 1024,
+      max_tokens: CLASSIFY_MAX_TOKENS,
       messages: [{ role: 'user', content: prompt }],
     });
     return response.choices[0]?.message?.content ?? null;
@@ -556,7 +560,7 @@ async function analyzeWithSonnet(systemPrompt: string, userPrompt: string): Prom
   try {
     const response = await getLLM().chat.completions.create({
       model: ANALYZE_MODEL,
-      max_tokens: 4096,
+      max_tokens: ANALYZE_MAX_TOKENS,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
@@ -1215,9 +1219,9 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
   }
   stepTime('Step 3', stepStart);
 
-  // Step 4: Classify with Haiku
+  // Step 4: Classify with lightweight model
   stepStart = Date.now();
-  console.log(`Step 4: Classifying ${toClassify.length} stories with Haiku...`);
+  console.log(`Step 4: Classifying ${toClassify.length} stories with ${CLASSIFY_MODEL}...`);
   const classificationResults = await batchProcess(toClassify, classifyStory, CLASSIFY_BATCH_SIZE);
 
   const classified: { item: FeedItem; classification: Classification }[] = [];
@@ -1230,12 +1234,12 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
   console.log(`  Classified ${sorted.length} stories`);
   stepTime('Step 4', stepStart);
 
-  // Step 5: Deep-analyze with Sonnet (parallel category streams)
+  // Step 5: Deep-analyze with heavier model (parallel category streams)
   stepStart = Date.now();
   const toAnalyze = sorted.slice(0, DEEP_ANALYZE_COUNT);
   const categoryGroups = groupByCategory(toAnalyze);
   const categoryCount = categoryGroups.size;
-  console.log(`Step 5: Deep-analyzing ${toAnalyze.length} stories with Sonnet (${categoryCount} parallel streams)...`);
+  console.log(`Step 5: Deep-analyzing ${toAnalyze.length} stories with ${ANALYZE_MODEL} (${categoryCount} parallel streams)...`);
 
   const analyzeStart = Date.now();
   const categoryResults = await Promise.all(
@@ -1304,11 +1308,11 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
     }
     console.log(`  [${bonusCat}] Classifying ${leftovers.length} bonus candidates...`);
 
-    // Classify with Haiku
+    // Classify bonus candidates
     const bonusClassResults = await batchProcess(leftovers, classifyStory, CLASSIFY_BATCH_SIZE);
     const bonusClassified: { item: FeedItem; classification: Classification }[] = [];
     for (let i = 0; i < bonusClassResults.length; i++) {
-      // Only keep items that Haiku confirms belong to this category
+      // Only keep items the classifier confirms belong to this category
       if (bonusClassResults[i] && bonusClassResults[i]!.category === bonusCat) {
         bonusClassified.push({ item: leftovers[i], classification: bonusClassResults[i]! });
       }
@@ -1320,8 +1324,8 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
       continue;
     }
 
-    // Analyze with Sonnet
-    console.log(`  [${bonusCat}] Analyzing ${bonusClassified.length} bonus stories with Sonnet...`);
+    // Analyze
+    console.log(`  [${bonusCat}] Analyzing ${bonusClassified.length} bonus stories with ${ANALYZE_MODEL}...`);
     const bonusAnalysisResults = await batchProcess(bonusClassified, (c) => analyzeStory(c.item, c.classification), ANALYZE_BATCH_SIZE);
 
     // Build Story objects
@@ -1451,7 +1455,7 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
   console.log(`  Sidebar: ${obfuscations.length} obfuscations, ${narratives.length} narratives, ${tickerItems.length} ticker, ${suppressedSearches.length} suppressed`);
   stepTime('Step 7', stepStart);
 
-  // Step 7b: Precompute narrative analyses (parallel Sonnet calls)
+  // Step 7b: Precompute narrative analyses (parallel)
   stepStart = Date.now();
   console.log('Step 7b: Precomputing narrative analyses...');
   const narrativeAnalyses: NarrativeAnalysis[] = [];
@@ -1511,7 +1515,7 @@ Respond in JSON:
   stats.narrativeAnalyses = narrativeAnalyses.length;
   stepTime('Step 7b', stepStart);
 
-  // Step 7c: Precompute search analyses (RSS + Sonnet per query)
+  // Step 7c: Precompute search analyses (RSS + analysis model per query)
   stepStart = Date.now();
   console.log('Step 7c: Precomputing search analyses...');
   const searchAnalyses: SuppressedSearchEntry[] = [];

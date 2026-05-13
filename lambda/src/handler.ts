@@ -597,7 +597,73 @@ function parseClaudeJSON<T>(raw: string): T | null {
     }
   }
 
+  // Last resort: recover from truncated output. Verbose local models often
+  // exhaust max_tokens mid-emit, leaving incomplete JSON. Walk the string,
+  // truncate to the last syntactically safe boundary, close open structures.
+  const recovered = recoverTruncatedJSON<T>(cleaned);
+  if (recovered) return recovered;
+
   return null;
+}
+
+function recoverTruncatedJSON<T>(raw: string): T | null {
+  // Find where to start (first '{' or '[' if there's chatty preamble)
+  const firstStruct = Math.min(
+    raw.indexOf('{') === -1 ? Infinity : raw.indexOf('{'),
+    raw.indexOf('[') === -1 ? Infinity : raw.indexOf('['),
+  );
+  if (!isFinite(firstStruct)) return null;
+  const body = raw.slice(firstStruct);
+
+  // Walk forward, tracking string state and bracket stack.
+  // Record the "last safe truncation point" — position right after a complete
+  // value (closed brace/bracket) or right before a comma at depth >= 1.
+  let inString = false;
+  let escape = false;
+  const stack: string[] = [];
+  let lastSafeEnd = -1;
+  const stackAtSafe: string[] = [];
+
+  const snapshotStack = (end: number) => {
+    lastSafeEnd = end;
+    stackAtSafe.length = 0;
+    for (const s of stack) stackAtSafe.push(s);
+  };
+
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (escape) { escape = false; continue; }
+    if (c === '\\') { escape = true; continue; }
+    if (c === '"') { inString = !inString; continue; }
+    if (inString) continue;
+
+    if (c === '{' || c === '[') {
+      stack.push(c);
+    } else if (c === '}' || c === ']') {
+      stack.pop();
+      snapshotStack(i + 1);
+      if (stack.length === 0) {
+        // Full balanced parse should have worked above; if we get here, something
+        // is weird after this point — try parsing what we have.
+        try { return JSON.parse(body.slice(0, i + 1)) as T; } catch { /* keep walking */ }
+      }
+    } else if (c === ',' && stack.length > 0) {
+      // Comma at depth >= 1 means the preceding value was complete.
+      // Safe to truncate right before this comma.
+      snapshotStack(i);
+    }
+  }
+
+  if (lastSafeEnd <= 0) return null;
+
+  // Reconstruct: keep body[0..lastSafeEnd], then close all open structures
+  // that were open at that point.
+  let recovered = body.slice(0, lastSafeEnd);
+  for (let i = stackAtSafe.length - 1; i >= 0; i--) {
+    recovered += stackAtSafe[i] === '{' ? '}' : ']';
+  }
+
+  try { return JSON.parse(recovered) as T; } catch { return null; }
 }
 
 function slugify(text: string): string {

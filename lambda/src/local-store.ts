@@ -63,19 +63,30 @@ function getEmbedClient(): OpenAI {
 }
 
 export async function embed(text: string): Promise<Float32Array | null> {
+  const batch = await embedBatch([text]);
+  return batch[0] ?? null;
+}
+
+/**
+ * Embed multiple texts in one HTTP request. LM Studio's /v1/embeddings
+ * accepts input: string[] and returns one embedding per element. ~5-10x
+ * faster than sequential calls for bulk operations like initial sync.
+ */
+export async function embedBatch(texts: string[]): Promise<(Float32Array | null)[]> {
+  if (texts.length === 0) return [];
   try {
     const response = await getEmbedClient().embeddings.create({
       model: EMBEDDING_MODEL,
-      input: text,
-      // LM Studio mis-handles SDK's default base64 encoding — force plain floats.
+      input: texts,
       encoding_format: 'float',
     });
-    const vec = response.data[0]?.embedding;
-    if (!vec) return null;
-    return new Float32Array(vec as number[]);
+    return texts.map((_, i) => {
+      const vec = response.data[i]?.embedding;
+      return vec ? new Float32Array(vec as number[]) : null;
+    });
   } catch (err) {
-    console.error('Embedding error:', err instanceof Error ? err.message : err);
-    return null;
+    console.error('Embedding batch error:', err instanceof Error ? err.message : err);
+    return texts.map(() => null);
   }
 }
 
@@ -165,19 +176,30 @@ export function upsertStory(input: UpsertInput): void {
       embedding = COALESCE(excluded.embedding, stories.embedding),
       analysis_json = COALESCE(excluded.analysis_json, stories.analysis_json)
   `).run({
-    slug: input.slug,
-    headline: input.headline,
-    source: input.source,
-    publishedAt: input.publishedAt ?? null,
+    slug: String(input.slug),
+    headline: String(input.headline),
+    source: input.source != null ? String(input.source) : '',
+    publishedAt: input.publishedAt != null ? String(input.publishedAt) : null,
     cachedAt: new Date().toISOString(),
-    category: input.category,
-    biasTag: input.biasTag,
-    manipulationIndex: input.manipulationIndex,
-    priority: input.priority,
-    quickTake: input.quickTake,
+    category: input.category != null ? String(input.category) : 'world',
+    biasTag: input.biasTag != null ? String(input.biasTag) : 'UNREPORTED',
+    manipulationIndex: typeof input.manipulationIndex === 'number' && Number.isFinite(input.manipulationIndex)
+      ? Math.round(input.manipulationIndex)
+      : 0,
+    priority: input.priority != null ? String(input.priority) : 'medium',
+    quickTake: input.quickTake != null ? String(input.quickTake) : '',
     embedding: embBuf,
-    analysisJson: input.analysisJson ?? null,
+    analysisJson: input.analysisJson != null ? String(input.analysisJson) : null,
   });
+}
+
+/**
+ * Cheap existence check used by the sync script to skip rows already imported.
+ * Avoids re-embedding 30K stories on resume.
+ */
+export function hasStory(slug: string): boolean {
+  const row = getStore().prepare(`SELECT 1 FROM stories WHERE slug = ? LIMIT 1`).get(slug);
+  return !!row;
 }
 
 export function getStoryBySlug(slug: string): CachedStory | null {

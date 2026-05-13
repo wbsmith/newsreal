@@ -229,8 +229,16 @@ async function setCached<T>(key: string, value: T, ttlSeconds = CACHE_TTL): Prom
   );
 }
 
+const STORY_TTL_DAYS = Number(process.env.STORY_TTL_DAYS ?? 90);
+
 async function putStory(story: Record<string, unknown>): Promise<void> {
-  await getDynamoDB().send(new PutCommand({ TableName: TABLES.stories, Item: story }));
+  // Stamp a TTL so DDB auto-deletes after STORY_TTL_DAYS. Requires TTL
+  // enabled on the table with attribute name "ttl" (one-time setup).
+  const ttl = Math.floor(Date.now() / 1000) + STORY_TTL_DAYS * 86400;
+  await getDynamoDB().send(new PutCommand({
+    TableName: TABLES.stories,
+    Item: { ...story, ttl },
+  }));
 }
 
 // ─── RSS Fetching ───

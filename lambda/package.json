@@ -6,6 +6,7 @@
   "scripts": {
     "pipeline": "tsx src/local.ts",
     "sync-from-ddb": "tsx src/sync-from-ddb.ts",
+    "purge-old": "tsx src/purge-old.ts",
     "build": "esbuild src/handler.ts --bundle --platform=node --target=node20 --format=esm --outfile=dist/index.mjs --external:@aws-sdk --banner:js=\"import { createRequire } from 'module'; const require = createRequire(import.meta.url);\"",
     "package": "npm run build && cd dist && zip -r ../function.zip index.mjs",
     "deploy": "npm run package && aws lambda update-function-code --function-name newsreal-cron --zip-file fileb://function.zip"

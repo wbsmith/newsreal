@@ -1871,11 +1871,22 @@ Respond in JSON:
   stepStart = Date.now();
   const allStoriesToStore = [...stories, ...bonusStories];
   console.log(`Step 8: Storing ${allStoriesToStore.length} stories to DynamoDB (${stories.length} main + ${bonusStories.length} bonus)...`);
-  const publishedAt = new Date().toISOString();
+  // Build per-story metadata: publishedAt is the *article's* publication date,
+  // not the pipeline run time (required for age-based purge semantics).
+  // Falls back to now if a story has no recoverable pubDate.
+  // `unique` carries every FeedItem that survived dedup, which covers both the
+  // main classified set and bonus-pass candidates.
+  const storyToFeedDate = new Map<string, string>();
+  for (const item of unique) storyToFeedDate.set(slugify(item.title), item.pubDate);
+  const nowIso = new Date().toISOString();
   const storeResults = await Promise.allSettled(
-    allStoriesToStore.map((story) =>
-      putStory({ ...story, id: story.slug, publishedAt })
-    )
+    allStoriesToStore.map((story) => {
+      const rawPubDate = storyToFeedDate.get(story.slug);
+      let publishedAt = rawPubDate;
+      if (!publishedAt || isNaN(new Date(publishedAt).getTime())) publishedAt = nowIso;
+      else publishedAt = new Date(publishedAt).toISOString(); // normalize to ISO
+      return putStory({ ...story, id: story.slug, publishedAt, storedAt: nowIso });
+    })
   );
   const stored = storeResults.filter((r) => r.status === 'fulfilled').length;
   const failed = storeResults.filter((r) => r.status === 'rejected').length;

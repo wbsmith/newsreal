@@ -240,16 +240,37 @@ const rssParser = new Parser({
   requestOptions: { headers: { 'User-Agent': 'NewsReal.ai/1.0 (Media Analysis Platform)' } },
 });
 
+// Google News RSS items embed the real publisher in two places: a
+// <font color="#6f6f6f">Publisher</font> in the content HTML, and a
+// " - Publisher" suffix at the end of the title. We prefer the font tag
+// (Google-News-specific marker — won't false-positive on other feeds).
+function extractGoogleNewsPublisher(rawContent: string | undefined): string | null {
+  if (!rawContent) return null;
+  const m = rawContent.match(/<font[^>]*>([^<]+)<\/font>/);
+  if (!m) return null;
+  const pub = m[1].trim();
+  if (!pub || pub.length > 60) return null;
+  return pub;
+}
+
 async function fetchFeed(url: string, sourceName: string): Promise<FeedItem[]> {
   const feed = await rssParser.parseURL(url);
-  return (feed.items || []).map((item) => ({
-    title: item.title || '',
-    link: item.link || '',
-    pubDate: item.pubDate || item.isoDate || new Date().toISOString(),
-    contentSnippet: item.contentSnippet,
-    content: item.content,
-    source: sourceName,
-  }));
+  return (feed.items || []).map((item) => {
+    const publisher = extractGoogleNewsPublisher(item.content);
+    let title = item.title || '';
+    // If the title ends with " - Publisher", strip it so headlines look clean.
+    if (publisher && title.endsWith(` - ${publisher}`)) {
+      title = title.slice(0, title.length - publisher.length - 3).trim();
+    }
+    return {
+      title,
+      link: item.link || '',
+      pubDate: item.pubDate || item.isoDate || new Date().toISOString(),
+      contentSnippet: item.contentSnippet,
+      content: item.content,
+      source: publisher || sourceName,
+    };
+  });
 }
 
 const GNEWS_SEARCH = 'https://news.google.com/rss/search?hl=en-US&gl=US&ceid=US:en&q=';
@@ -1626,14 +1647,27 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
     if (!narrativesRaw) return [];
     const parsed = parseClaudeJSON<{ narratives: any[] }>(narrativesRaw);
     if (!parsed?.narratives) return [];
-    return parsed.narratives.map((n: any) => ({
-      text: n.narrative_text, heat: generateHeatBar(n.coherence_score),
-      coherenceScore: n.coherence_score,
-      coherenceBreakdown: n.coherence_breakdown || undefined,
-      outletsInvolved: n.outlets_involved,
-      slug: slugify(String(n.narrative_text).replace(/<[^>]*>/g, '')),
-      relatedStories: resolveSlugs(n.related_story_slugs || []),
-    }));
+    return parsed.narratives.map((n: any) => {
+      const relatedStories = resolveSlugs(n.related_story_slugs || []);
+      // Derive outletsInvolved from the actual stories we resolved — ground truth,
+      // not whatever the model invented. Dedup preserving first-seen order.
+      const seen = new Set<string>();
+      const outletsInvolved: string[] = [];
+      for (const s of relatedStories) {
+        if (s.source && !seen.has(s.source)) {
+          seen.add(s.source);
+          outletsInvolved.push(s.source);
+        }
+      }
+      return {
+        text: n.narrative_text, heat: generateHeatBar(n.coherence_score),
+        coherenceScore: n.coherence_score,
+        coherenceBreakdown: n.coherence_breakdown || undefined,
+        outletsInvolved,
+        slug: slugify(String(n.narrative_text).replace(/<[^>]*>/g, '')),
+        relatedStories,
+      };
+    });
   })();
 
   stats.narratives = narratives.length;

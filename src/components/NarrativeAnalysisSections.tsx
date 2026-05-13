@@ -43,11 +43,21 @@ export default function NarrativeAnalysisSections({ analysis }: NarrativeAnalysi
             {'\uD83D\uDCE1'} OUTLETS INVOLVED ({analysis.outletsInvolved.length})
           </div>
           <div className="search-results-list">
-            {analysis.outletsInvolved.map((outlet, i) => (
-              <div key={i} className="search-result-item">
-                <span className="search-result-source">{outlet}</span>
-              </div>
-            ))}
+            {analysis.outletsInvolved.map((outlet, i) => {
+              const target = outlet.toLowerCase().trim();
+              const match = analysis.relatedStories.find(
+                (s) => s.source && s.source.toLowerCase().trim() === target
+              );
+              return (
+                <div key={i} className="search-result-item">
+                  {match ? (
+                    <a href={`/story/${match.slug}`} className="search-result-source">{outlet}</a>
+                  ) : (
+                    <span style={{ color: 'var(--text-muted, #888)' }}>{outlet}</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

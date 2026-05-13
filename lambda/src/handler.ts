@@ -94,7 +94,7 @@ interface Story {
   bonus?: boolean;
 }
 
-interface SourceArticle { slug: string; headline: string; sourceUrl: string; }
+interface SourceArticle { slug: string; headline: string; sourceUrl: string; source: string; }
 interface Narrative { text: string; heat: string; coherenceScore?: number; outletsInvolved?: string[]; slug?: string; relatedStories?: SourceArticle[]; }
 interface Obfuscation { category: string; whatHappened: string; whyItMatters: string; whatsCoveringIt: string; whoBenefits: string; detectionConfidence: number; sourceUrl?: string; relatedStories?: SourceArticle[]; }
 interface TickerItem { text: string; severity: 'high' | 'med' | 'low'; linkType?: 'story' | 'narrative'; linkRef?: string; }
@@ -1585,7 +1585,7 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
   const storyBySlug = new Map(stories.map(s => [s.slug, s]));
   function resolveSlugs(slugs: string[]): SourceArticle[] {
     return slugs.map(sl => storyBySlug.get(sl)).filter(Boolean)
-      .map(s => ({ slug: s!.slug, headline: s!.headline, sourceUrl: s!.sourceUrl }));
+      .map(s => ({ slug: s!.slug, headline: s!.headline, sourceUrl: s!.sourceUrl, source: s!.source }));
   }
 
   const storyListForPrompt = stories.slice(0, 30).map((s, i) =>

@@ -83,6 +83,7 @@ export interface SourceArticle {
   slug: string;
   headline: string;
   sourceUrl: string;
+  source?: string;
 }
 
 export interface Obfuscation {

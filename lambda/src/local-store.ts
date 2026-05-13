@@ -190,3 +190,50 @@ export function countStories(): { total: number; withEmbedding: number } {
   const withEmbedding = (getStore().prepare(`SELECT COUNT(*) as c FROM stories WHERE embedding IS NOT NULL`).get() as { c: number }).c;
   return { total, withEmbedding };
 }
+
+// ─── Category centroids (Phase 4) ───
+// Build a centroid per category by averaging the embeddings of prototype headlines.
+// Cached in-memory after first build.
+
+export type CentroidMap = Map<string, Float32Array>;
+let centroidsCache: CentroidMap | null = null;
+
+export async function buildCategoryCentroids(prototypes: Record<string, string[]>): Promise<CentroidMap> {
+  if (centroidsCache) return centroidsCache;
+  const map: CentroidMap = new Map();
+  for (const [category, examples] of Object.entries(prototypes)) {
+    const vecs: Float32Array[] = [];
+    for (const ex of examples) {
+      const v = await embed(ex);
+      if (v) vecs.push(v);
+    }
+    if (vecs.length === 0) continue;
+    const dim = vecs[0].length;
+    const sum = new Float32Array(dim);
+    for (const v of vecs) {
+      for (let i = 0; i < dim; i++) sum[i] += v[i];
+    }
+    for (let i = 0; i < dim; i++) sum[i] /= vecs.length;
+    map.set(category, sum);
+  }
+  centroidsCache = map;
+  return map;
+}
+
+export interface CentroidMatch {
+  category: string;
+  similarity: number;
+  margin: number; // top - runner-up
+}
+
+export function matchByCentroid(queryEmbedding: Float32Array, centroids: CentroidMap): CentroidMatch | null {
+  const scores: { category: string; sim: number }[] = [];
+  for (const [category, centroid] of centroids) {
+    scores.push({ category, sim: cosineSimilarity(queryEmbedding, centroid) });
+  }
+  if (scores.length === 0) return null;
+  scores.sort((a, b) => b.sim - a.sim);
+  const top = scores[0];
+  const runnerUp = scores[1]?.sim ?? 0;
+  return { category: top.category, similarity: top.sim, margin: top.sim - runnerUp };
+}

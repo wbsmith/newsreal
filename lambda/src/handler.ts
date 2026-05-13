@@ -5,7 +5,8 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { Readability } from '@mozilla/readability';
 import { parseHTML } from 'linkedom';
-import { embed, findNearestNeighbor, upsertStory } from './local-store.js';
+import { embed, findNearestNeighbor, upsertStory, buildCategoryCentroids, matchByCentroid, type CentroidMap } from './local-store.js';
+import { CATEGORY_PROTOTYPES } from './category-prototypes.js';
 
 // ─── Types ───
 
@@ -1136,26 +1137,88 @@ Respond in JSON:
 
 // ─── Pipeline Steps ───
 
-export const classifyStats = { cacheHits: 0, cacheMisses: 0, llmCalls: 0, embedFailures: 0 };
+export const classifyStats = { cacheHits: 0, centroidHits: 0, fullLLMCalls: 0, slimLLMCalls: 0, embedFailures: 0 };
 export function resetClassifyStats(): void {
   classifyStats.cacheHits = 0;
-  classifyStats.cacheMisses = 0;
-  classifyStats.llmCalls = 0;
+  classifyStats.centroidHits = 0;
+  classifyStats.fullLLMCalls = 0;
+  classifyStats.slimLLMCalls = 0;
   classifyStats.embedFailures = 0;
+}
+
+// ─── Phase 4: centroid match + Phase 5: heuristic priority + slim LLM ───
+
+const CENTROID_MIN_SIMILARITY = Number(process.env.CENTROID_MIN_SIMILARITY ?? 0.45);
+const CENTROID_MIN_MARGIN = Number(process.env.CENTROID_MIN_MARGIN ?? 0.05);
+const DISABLE_CENTROID = process.env.DISABLE_CENTROID === 'true';
+
+let centroidsPromise: Promise<CentroidMap> | null = null;
+function loadCentroids(): Promise<CentroidMap> {
+  if (!centroidsPromise) centroidsPromise = buildCategoryCentroids(CATEGORY_PROTOTYPES);
+  return centroidsPromise;
+}
+
+// Top-tier outlets get a priority weight bump.
+const TOP_TIER_SOURCES = new Set([
+  'AP', 'AP TOP NEWS', 'REUTERS', 'REUTERS WORLD', 'REUTERS BUSINESS', 'REUTERS TECH',
+  'BLOOMBERG', 'WSJ', 'WALL STREET JOURNAL', 'NEW YORK TIMES', 'NYT', 'WASHINGTON POST',
+  'BBC', 'BBC NEWS', 'FINANCIAL TIMES', 'FT', 'THE GUARDIAN', 'THE ECONOMIST',
+  'CNN', 'NBC NEWS', 'CBS NEWS', 'ABC NEWS', 'AXIOS', 'POLITICO',
+]);
+
+function heuristicPriority(item: FeedItem): 'high' | 'medium' | 'low' {
+  // Recency: fresher = higher. Decay over 24h.
+  const ageMs = Date.now() - new Date(item.pubDate).getTime();
+  const ageHours = isNaN(ageMs) ? 24 : ageMs / (1000 * 60 * 60);
+  const recencyScore = Math.max(0, 1 - ageHours / 24); // 1.0 at t=0, 0 at 24h+
+
+  // Source weight: top-tier outlets get a 1.5× bump.
+  const sourceUpper = item.source.toUpperCase();
+  const sourceWeight = TOP_TIER_SOURCES.has(sourceUpper) ? 1.5 : 1.0;
+
+  const score = recencyScore * sourceWeight;
+  if (score >= 0.7) return 'high';
+  if (score >= 0.35) return 'medium';
+  return 'low';
+}
+
+function buildSlimClassifyPrompt(item: FeedItem, category: Category): string {
+  const snippet = (item.contentSnippet || item.content || '').slice(0, 600);
+  return `Classify the bias and manipulation of this news item. Category is already known: ${category}.
+
+HEADLINE: "${item.title}"
+SOURCE: ${item.source}
+SNIPPET: ${snippet}
+
+Evaluate:
+- bias_tag: ONE OF [LEAN LEFT, LEAN RIGHT, ESTABLISHMENT, ANTI-ESTABLISHMENT, UNREPORTED, CENTER-ESTABLISHMENT]
+- manipulation_index: 0-100, how manipulative is the language and framing
+- quick_take: ONE sentence (max 25 words), provocative but factual
+
+Respond ONLY with valid JSON. No markdown, no preamble:
+{"bias_tag":"...","manipulation_index":0,"quick_take":"..."}`;
+}
+
+interface SlimClassification {
+  bias_tag: string;
+  manipulation_index: number;
+  quick_take: string;
 }
 
 async function classifyStory(item: FeedItem): Promise<Classification | null> {
   const slug = slugify(item.title);
+  const validCategories: Category[] = ['politics', 'tech', 'finance', 'world', 'science', 'deep-state'];
+  const priorityHeuristic = heuristicPriority(item);
 
-  // Try local cache via embedding (Phase 3)
+  // Embed the headline for cache + centroid lookups
   const embedding = await embed(item.title);
-  if (!embedding) {
-    classifyStats.embedFailures++;
-  } else {
+  if (!embedding) classifyStats.embedFailures++;
+
+  // ─── Tier 1: full cache hit (Phase 3) ───
+  if (embedding) {
     const hit = findNearestNeighbor(embedding);
     if (hit) {
       classifyStats.cacheHits++;
-      // Persist this story under its own slug so the cache grows
       upsertStory({
         slug,
         headline: item.title,
@@ -1176,35 +1239,65 @@ async function classifyStory(item: FeedItem): Promise<Classification | null> {
         quick_take: hit.story.quickTake,
       };
     }
-    classifyStats.cacheMisses++;
   }
 
-  // No cache hit — fall back to LLM
-  classifyStats.llmCalls++;
+  // ─── Tier 2: centroid + hint → slim LLM (Phase 4 + 5) ───
+  let category: Category | null = null;
+  if (embedding && !DISABLE_CENTROID) {
+    const centroids = await loadCentroids();
+    const match = matchByCentroid(embedding, centroids);
+    const matchValid = match && validCategories.includes(match.category as Category);
+
+    if (matchValid && match!.similarity >= CENTROID_MIN_SIMILARITY && match!.margin >= CENTROID_MIN_MARGIN) {
+      category = match!.category as Category;
+    } else if (item.hintCategory && matchValid && match!.category === item.hintCategory) {
+      // Lower confidence centroid corroborated by RSS hint — accept it.
+      category = item.hintCategory;
+    }
+  }
+
+  if (category) {
+    classifyStats.slimLLMCalls++;
+    const slimRaw = await classifyWithHaiku(buildSlimClassifyPrompt(item, category));
+    const slim = slimRaw ? parseClaudeJSON<SlimClassification>(slimRaw) : null;
+    if (slim) {
+      const parsed: Classification = {
+        category,
+        bias_tag: slim.bias_tag,
+        manipulation_index: slim.manipulation_index,
+        priority: priorityHeuristic,
+        quick_take: slim.quick_take,
+      };
+      if (embedding) {
+        upsertStory({
+          slug, headline: item.title, source: item.source, publishedAt: item.pubDate,
+          category: parsed.category, biasTag: parsed.bias_tag,
+          manipulationIndex: parsed.manipulation_index, priority: parsed.priority,
+          quickTake: parsed.quick_take, embedding,
+        });
+      }
+      return parsed;
+    }
+    // Slim LLM failed — fall through to full LLM as last resort
+  }
+
+  // ─── Tier 3: full LLM classify ───
+  classifyStats.fullLLMCalls++;
   const prompt = buildClassifyPrompt(item.title, item.contentSnippet || item.content || '', item.source, item.fullText);
   const raw = await classifyWithHaiku(prompt);
   if (!raw) return null;
   const parsed = parseClaudeJSON<Classification>(raw);
   if (!parsed) { console.error('Failed to parse classification:', raw.slice(0, 200)); return null; }
-  const valid: Category[] = ['politics', 'tech', 'finance', 'world', 'science', 'deep-state'];
-  if (!valid.includes(parsed.category)) parsed.category = 'world';
+  if (!validCategories.includes(parsed.category)) parsed.category = 'world';
 
-  // Persist to local cache with embedding (Phase 2)
   if (embedding) {
     upsertStory({
-      slug,
-      headline: item.title,
-      source: item.source,
-      publishedAt: item.pubDate,
-      category: parsed.category,
-      biasTag: parsed.bias_tag,
-      manipulationIndex: parsed.manipulation_index,
-      priority: parsed.priority,
-      quickTake: parsed.quick_take,
-      embedding,
+      slug, headline: item.title, source: item.source, publishedAt: item.pubDate,
+      category: parsed.category, biasTag: parsed.bias_tag,
+      manipulationIndex: parsed.manipulation_index, priority: parsed.priority,
+      quickTake: parsed.quick_take, embedding,
     });
   }
-
   return parsed;
 }
 
@@ -1360,10 +1453,11 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
 
   const sorted = categoryBalancedSort(classified);
   stats.classified = sorted.length;
-  console.log(`  Classified ${sorted.length} stories  (cache hits: ${classifyStats.cacheHits}, LLM calls: ${classifyStats.llmCalls}, embed failures: ${classifyStats.embedFailures})`);
+  console.log(`  Classified ${sorted.length} stories  (cache: ${classifyStats.cacheHits}, slim-LLM: ${classifyStats.slimLLMCalls}, full-LLM: ${classifyStats.fullLLMCalls}, embed-failures: ${classifyStats.embedFailures})`);
   stats.cacheHits = classifyStats.cacheHits;
-  stats.cacheMisses = classifyStats.cacheMisses;
-  stats.llmCalls = classifyStats.llmCalls;
+  stats.slimLLMCalls = classifyStats.slimLLMCalls;
+  stats.fullLLMCalls = classifyStats.fullLLMCalls;
+  stats.embedFailures = classifyStats.embedFailures;
   stepTime('Step 4', stepStart);
 
   // Step 5: Deep-analyze with heavier model (parallel category streams)

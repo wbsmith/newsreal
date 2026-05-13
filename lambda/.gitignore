@@ -4,3 +4,4 @@ function.zip
 .env
 .env.local
 .env.*.local
+data/

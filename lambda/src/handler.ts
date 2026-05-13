@@ -5,6 +5,7 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { Readability } from '@mozilla/readability';
 import { parseHTML } from 'linkedom';
+import { embed, findNearestNeighbor, upsertStory } from './local-store.js';
 
 // ─── Types ───
 
@@ -1135,7 +1136,51 @@ Respond in JSON:
 
 // ─── Pipeline Steps ───
 
+export const classifyStats = { cacheHits: 0, cacheMisses: 0, llmCalls: 0, embedFailures: 0 };
+export function resetClassifyStats(): void {
+  classifyStats.cacheHits = 0;
+  classifyStats.cacheMisses = 0;
+  classifyStats.llmCalls = 0;
+  classifyStats.embedFailures = 0;
+}
+
 async function classifyStory(item: FeedItem): Promise<Classification | null> {
+  const slug = slugify(item.title);
+
+  // Try local cache via embedding (Phase 3)
+  const embedding = await embed(item.title);
+  if (!embedding) {
+    classifyStats.embedFailures++;
+  } else {
+    const hit = findNearestNeighbor(embedding);
+    if (hit) {
+      classifyStats.cacheHits++;
+      // Persist this story under its own slug so the cache grows
+      upsertStory({
+        slug,
+        headline: item.title,
+        source: item.source,
+        publishedAt: item.pubDate,
+        category: hit.story.category,
+        biasTag: hit.story.biasTag,
+        manipulationIndex: hit.story.manipulationIndex,
+        priority: hit.story.priority,
+        quickTake: hit.story.quickTake,
+        embedding,
+      });
+      return {
+        category: hit.story.category as Category,
+        bias_tag: hit.story.biasTag,
+        manipulation_index: hit.story.manipulationIndex,
+        priority: hit.story.priority as 'high' | 'medium' | 'low',
+        quick_take: hit.story.quickTake,
+      };
+    }
+    classifyStats.cacheMisses++;
+  }
+
+  // No cache hit — fall back to LLM
+  classifyStats.llmCalls++;
   const prompt = buildClassifyPrompt(item.title, item.contentSnippet || item.content || '', item.source, item.fullText);
   const raw = await classifyWithHaiku(prompt);
   if (!raw) return null;
@@ -1143,6 +1188,23 @@ async function classifyStory(item: FeedItem): Promise<Classification | null> {
   if (!parsed) { console.error('Failed to parse classification:', raw.slice(0, 200)); return null; }
   const valid: Category[] = ['politics', 'tech', 'finance', 'world', 'science', 'deep-state'];
   if (!valid.includes(parsed.category)) parsed.category = 'world';
+
+  // Persist to local cache with embedding (Phase 2)
+  if (embedding) {
+    upsertStory({
+      slug,
+      headline: item.title,
+      source: item.source,
+      publishedAt: item.pubDate,
+      category: parsed.category,
+      biasTag: parsed.bias_tag,
+      manipulationIndex: parsed.manipulation_index,
+      priority: parsed.priority,
+      quickTake: parsed.quick_take,
+      embedding,
+    });
+  }
+
   return parsed;
 }
 
@@ -1285,9 +1347,10 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
   }
   stepTime('Step 3', stepStart);
 
-  // Step 4: Classify with lightweight model
+  // Step 4: Classify with lightweight model (with local embedding cache)
   stepStart = Date.now();
-  console.log(`Step 4: Classifying ${toClassify.length} stories with ${CLASSIFY_MODEL}...`);
+  resetClassifyStats();
+  console.log(`Step 4: Classifying ${toClassify.length} stories with ${CLASSIFY_MODEL} (cache threshold ${process.env.CACHE_HIT_THRESHOLD ?? 0.92})...`);
   const classificationResults = await batchProcess(toClassify, classifyStory, CLASSIFY_BATCH_SIZE);
 
   const classified: { item: FeedItem; classification: Classification }[] = [];
@@ -1297,7 +1360,10 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
 
   const sorted = categoryBalancedSort(classified);
   stats.classified = sorted.length;
-  console.log(`  Classified ${sorted.length} stories`);
+  console.log(`  Classified ${sorted.length} stories  (cache hits: ${classifyStats.cacheHits}, LLM calls: ${classifyStats.llmCalls}, embed failures: ${classifyStats.embedFailures})`);
+  stats.cacheHits = classifyStats.cacheHits;
+  stats.cacheMisses = classifyStats.cacheMisses;
+  stats.llmCalls = classifyStats.llmCalls;
   stepTime('Step 4', stepStart);
 
   // Step 5: Deep-analyze with heavier model (parallel category streams)

@@ -1,3 +1,6 @@
 node_modules/
 dist/
 function.zip
+.env
+.env.local
+.env.*.local

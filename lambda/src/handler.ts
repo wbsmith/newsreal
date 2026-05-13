@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import Parser from 'rss-parser';
 import { formatDistanceToNow } from 'date-fns';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
@@ -143,10 +143,13 @@ interface SourceNetwork {
 // Module-level prompt overrides — set in runFullPipeline(), read by prompt builders
 let activePromptOverrides = new Map<string, string>();
 
-const CLASSIFY_BATCH_SIZE = 10;
-const ANALYZE_BATCH_SIZE = 5;
-const CLASSIFY_COUNT = 120;
-const DEEP_ANALYZE_COUNT = 120;
+const CLASSIFY_BATCH_SIZE = Number(process.env.CLASSIFY_BATCH_SIZE ?? 10);
+const ANALYZE_BATCH_SIZE = Number(process.env.ANALYZE_BATCH_SIZE ?? 5);
+const CLASSIFY_COUNT = Number(process.env.CLASSIFY_COUNT ?? 120);
+const DEEP_ANALYZE_COUNT = Number(process.env.DEEP_ANALYZE_COUNT ?? 120);
+const CLASSIFY_MODEL = process.env.LOCAL_CLASSIFY_MODEL || 'nemotron-3-nano-omni';
+const ANALYZE_MODEL = process.env.LOCAL_ANALYZE_MODEL || 'gemma4-31b';
+const LLM_BASE_URL = process.env.LLM_BASE_URL || 'http://localhost:1234/v1';
 const CACHE_TTL = 43200; // 12 hours — pipeline runs 3x/day (every 8h)
 const ENABLE_ARTICLE_FETCH = false; // Feature flag: fetch full article text via Readability
 const ARTICLE_FETCH_BATCH_SIZE = 20;
@@ -166,16 +169,17 @@ const TABLES = {
 
 // ─── Clients (lazy init) ───
 
-let anthropic: Anthropic | null = null;
+let llm: OpenAI | null = null;
 let docClient: DynamoDBDocumentClient | null = null;
 
-function getAnthropic(): Anthropic {
-  if (!anthropic) {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set');
-    anthropic = new Anthropic({ apiKey });
+function getLLM(): OpenAI {
+  if (!llm) {
+    llm = new OpenAI({
+      baseURL: LLM_BASE_URL,
+      apiKey: process.env.LLM_API_KEY || 'not-needed',
+    });
   }
-  return anthropic;
+  return llm;
 }
 
 function getDynamoDB(): DynamoDBDocumentClient {
@@ -532,35 +536,35 @@ async function fetchArticleTexts(items: FeedItem[]): Promise<{ fetched: number; 
   return { fetched, failed };
 }
 
-// ─── Claude API Calls ───
+// ─── Local LLM Calls (OpenAI-compatible: LM Studio / Ollama / vLLM) ───
 
 async function classifyWithHaiku(prompt: string): Promise<string | null> {
   try {
-    const response = await getAnthropic().messages.create({
-      model: 'claude-haiku-4-5-20251001',
+    const response = await getLLM().chat.completions.create({
+      model: CLASSIFY_MODEL,
       max_tokens: 1024,
       messages: [{ role: 'user', content: prompt }],
     });
-    const block = response.content[0];
-    return block.type === 'text' ? block.text : null;
+    return response.choices[0]?.message?.content ?? null;
   } catch (err) {
-    console.error('Haiku API error:', err instanceof Error ? err.message : err);
+    console.error('Classify LLM error:', err instanceof Error ? err.message : err);
     return null;
   }
 }
 
 async function analyzeWithSonnet(systemPrompt: string, userPrompt: string): Promise<string | null> {
   try {
-    const response = await getAnthropic().messages.create({
-      model: 'claude-sonnet-4-20250514',
+    const response = await getLLM().chat.completions.create({
+      model: ANALYZE_MODEL,
       max_tokens: 4096,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }],
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
     });
-    const block = response.content[0];
-    return block.type === 'text' ? block.text : null;
+    return response.choices[0]?.message?.content ?? null;
   } catch (err) {
-    console.error('Sonnet API error:', err instanceof Error ? err.message : err);
+    console.error('Analyze LLM error:', err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -568,13 +572,28 @@ async function analyzeWithSonnet(systemPrompt: string, userPrompt: string): Prom
 // ─── Utility ───
 
 function parseClaudeJSON<T>(raw: string): T | null {
-  try {
-    let cleaned = raw.trim();
-    if (cleaned.startsWith('```')) {
-      cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+  const cleaned = raw.trim();
+
+  // Try fenced ```json block first
+  const fenceMatch = cleaned.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+  if (fenceMatch) {
+    try { return JSON.parse(fenceMatch[1]) as T; } catch { /* fall through */ }
+  }
+
+  // Direct parse
+  try { return JSON.parse(cleaned) as T; } catch { /* fall through */ }
+
+  // Local models often add chatty preambles — extract the largest balanced
+  // {...} or [...] span and try that.
+  for (const [open, close] of [['{', '}'], ['[', ']']] as const) {
+    const first = cleaned.indexOf(open);
+    const last = cleaned.lastIndexOf(close);
+    if (first !== -1 && last > first) {
+      try { return JSON.parse(cleaned.slice(first, last + 1)) as T; } catch { /* fall through */ }
     }
-    return JSON.parse(cleaned) as T;
-  } catch { return null; }
+  }
+
+  return null;
 }
 
 function slugify(text: string): string {
@@ -1121,7 +1140,7 @@ function generateHeatBar(score: number): string {
 
 // ─── Main Pipeline ───
 
-async function runFullPipeline(): Promise<Record<string, unknown>> {
+export async function runFullPipeline(): Promise<Record<string, unknown>> {
   const startTime = Date.now();
   const stats: Record<string, unknown> = {};
 

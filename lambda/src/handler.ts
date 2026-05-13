@@ -382,7 +382,7 @@ const ALL_FEEDS: { url: string; name: string; hintCategory?: Category }[] = [
   { url: 'https://fee.org/rss', name: 'FEE' },
 ];
 
-async function fetchAllFeeds(): Promise<{ items: FeedItem[]; sourceErrors: number; errorDetails: string[] }> {
+export async function fetchAllFeeds(): Promise<{ items: FeedItem[]; sourceErrors: number; errorDetails: string[] }> {
   const rssPromises = ALL_FEEDS.map(async (f) => {
     const items = await fetchFeed(f.url, f.name);
     if (f.hintCategory) {
@@ -481,7 +481,7 @@ function addToCluster(
   });
 }
 
-function deduplicateStories(items: FeedItem[]): { unique: FeedItem[]; duplicates: number; clusters: Map<number, SourceCluster> } {
+export function deduplicateStories(items: FeedItem[]): { unique: FeedItem[]; duplicates: number; clusters: Map<number, SourceCluster> } {
   const unique: FeedItem[] = [];
   const trigrams: Map<string, number>[] = [];
   const magnitudes: number[] = [];
@@ -775,7 +775,7 @@ function weightedSample(items: FeedItem[], count: number, usedLinks: Set<string>
   return result;
 }
 
-function selectForClassification(items: FeedItem[], total: number, minPerCategory: number): FeedItem[] {
+export function selectForClassification(items: FeedItem[], total: number, minPerCategory: number): FeedItem[] {
   // Filter out stale items
   const cutoff = Date.now() - MAX_AGE_HOURS * 60 * 60 * 1000;
   const fresh = items.filter(item => {
@@ -1234,7 +1234,7 @@ interface SlimClassification {
   quick_take: string;
 }
 
-async function classifyStory(item: FeedItem): Promise<Classification | null> {
+export async function classifyStory(item: FeedItem): Promise<Classification | null> {
   const slug = slugify(item.title);
   const validCategories: Category[] = ['politics', 'tech', 'finance', 'world', 'science', 'deep-state'];
   const priorityHeuristic = heuristicPriority(item);

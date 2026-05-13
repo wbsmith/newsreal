@@ -1164,7 +1164,7 @@ async function analyzeStory(item: FeedItem, classification: Classification): Pro
 function feedItemToStory(item: FeedItem, classification: Classification, analysis: AnalysisResult | null, index: number, cluster?: SourceCluster): Story {
   const deepDive: DeepDive = analysis
     ? { mainstream: analysis.mainstream_frame, realStory: analysis.real_story, leftSpin: analysis.left_spin, rightSpin: analysis.right_spin, whosBenefiting: analysis.who_benefits, whatsHidden: analysis.whats_hidden }
-    : { mainstream: 'Full analysis not yet generated for this story.', realStory: classification.quick_take, leftSpin: 'Deep analysis pending.', rightSpin: 'Deep analysis pending.', whosBenefiting: 'Deep analysis pending.', whatsHidden: 'Deep analysis pending.' };
+    : { mainstream: 'Full analysis not yet generated for this story.', realStory: 'Deep analysis pending.', leftSpin: 'Deep analysis pending.', rightSpin: 'Deep analysis pending.', whosBenefiting: 'Deep analysis pending.', whatsHidden: 'Deep analysis pending.' };
 
   const story: Story = {
     id: index + 1, slug: slugify(item.title), category: classification.category,
@@ -1597,13 +1597,15 @@ Respond in JSON:
         try {
           feedItems = await fetchFeed(rssUrl, 'Google News');
         } catch (err) {
-          console.error(`  RSS fetch failed for "${query}":`, err instanceof Error ? err.message : err);
+          console.error(`  [search-analysis] RSS error for "${query}":`, err instanceof Error ? err.message : err);
           return { query, analysis: null } as SuppressedSearchEntry;
         }
 
         if (feedItems.length === 0) {
+          console.log(`  [search-analysis] "${query}" — 0 results from Google News, skipping`);
           return { query, analysis: null } as SuppressedSearchEntry;
         }
+        console.log(`  [search-analysis] "${query}" — ${feedItems.length} results, analyzing...`);
 
         const topResults = feedItems.slice(0, 15).map((item) => ({
           title: item.title, source: item.source, link: item.link,

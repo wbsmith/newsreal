@@ -1,6 +1,7 @@
 'use client';
 
 import { NarrativeAnalysis } from '@/types';
+import { safeText } from '@/lib/safe-text';
 
 interface NarrativeAnalysisSectionsProps {
   analysis: NarrativeAnalysis;
@@ -13,28 +14,28 @@ export default function NarrativeAnalysisSections({ analysis }: NarrativeAnalysi
         <div className="modal-section-title">
           {'\uD83C\uDFAF'} NARRATIVE ORIGIN
         </div>
-        <p className="analysis-text speculation">{analysis.narrativeOrigin}</p>
+        <p className="analysis-text speculation">{safeText(analysis.narrativeOrigin)}</p>
       </div>
 
       <div className="modal-section">
         <div className="modal-section-title">
           {'\uD83D\uDD17'} COORDINATION EVIDENCE <span className="blink">{'\u258A'}</span>
         </div>
-        <p className="analysis-text speculation">{analysis.coordinationEvidence}</p>
+        <p className="analysis-text speculation">{safeText(analysis.coordinationEvidence)}</p>
       </div>
 
       <div className="modal-section">
         <div className="modal-section-title">
           {'\uD83D\uDCB0'} WHO BENEFITS?
         </div>
-        <p className="analysis-text">{analysis.whoBenefits}</p>
+        <p className="analysis-text">{safeText(analysis.whoBenefits)}</p>
       </div>
 
       <div className="modal-section">
         <div className="modal-section-title">
           {'\uD83D\uDD73'} SUPPRESSED ALTERNATIVE FRAMING
         </div>
-        <p className="analysis-text speculation">{analysis.suppressedAlternative}</p>
+        <p className="analysis-text speculation">{safeText(analysis.suppressedAlternative)}</p>
       </div>
 
       {analysis.outletsInvolved.length > 0 && (

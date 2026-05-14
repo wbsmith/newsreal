@@ -1,6 +1,7 @@
 'use client';
 
 import { SearchAnalysis } from '@/types';
+import { safeText } from '@/lib/safe-text';
 
 interface SearchAnalysisSectionsProps {
   analysis: SearchAnalysis;
@@ -13,7 +14,7 @@ export default function SearchAnalysisSections({ analysis }: SearchAnalysisSecti
         <div className="modal-section-title">
           {'\uD83D\uDCE1'} MEDIA COVERAGE PATTERN
         </div>
-        <p className="analysis-text">{analysis.mediaPattern}</p>
+        <p className="analysis-text">{safeText(analysis.mediaPattern)}</p>
       </div>
 
       <div className="modal-section">
@@ -21,28 +22,28 @@ export default function SearchAnalysisSections({ analysis }: SearchAnalysisSecti
           {'\uD83D\uDD13'} WHAT THE RESULTS REVEAL (SPECULATIVE){' '}
           <span className="blink">{'\u258A'}</span>
         </div>
-        <p className="analysis-text speculation">{analysis.whatsRevealed}</p>
+        <p className="analysis-text speculation">{safeText(analysis.whatsRevealed)}</p>
       </div>
 
       <div className="modal-section">
         <div className="modal-section-title">
           {'\uD83D\uDD73'} WHAT&apos;S CONSPICUOUSLY MISSING
         </div>
-        <p className="analysis-text speculation">{analysis.whatsMissing}</p>
+        <p className="analysis-text speculation">{safeText(analysis.whatsMissing)}</p>
       </div>
 
       <div className="modal-section">
         <div className="modal-section-title">
           {'\uD83D\uDCB0'} CONNECTION MAP: FOLLOW THE MONEY
         </div>
-        <p className="analysis-text">{analysis.connectionMap}</p>
+        <p className="analysis-text">{safeText(analysis.connectionMap)}</p>
       </div>
 
       <div className="modal-section">
         <div className="modal-section-title">
           {'\uD83D\uDEAB'} WHY THIS IS SUPPRESSED
         </div>
-        <p className="analysis-text speculation">{analysis.whyItsSuppressed}</p>
+        <p className="analysis-text speculation">{safeText(analysis.whyItsSuppressed)}</p>
       </div>
 
       <div className="modal-section">

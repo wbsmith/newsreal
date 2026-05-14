@@ -3,6 +3,7 @@
 import { Story } from '@/types';
 import RedactedText from './RedactedText';
 import SourceNetworkSection from './SourceNetworkSection';
+import { safeText } from '@/lib/safe-text';
 
 interface StoryAnalysisSectionsProps {
   story: Story;
@@ -26,14 +27,14 @@ export default function StoryAnalysisSections({ story }: StoryAnalysisSectionsPr
             <div className="modal-section-title">
               {'\uD83D\uDCFA'} THE MAINSTREAM FRAME
             </div>
-            <p className="analysis-text">{story.deepDive.mainstream}</p>
+            <p className="analysis-text">{safeText(story.deepDive.mainstream)}</p>
           </div>
 
           <div className="modal-section">
             <div className="modal-section-title">
               {'\uD83D\uDD13'} THE REAL STORY (SPECULATIVE)
             </div>
-            <p className="analysis-text speculation">{story.deepDive.realStory}</p>
+            <p className="analysis-text speculation">{safeText(story.deepDive.realStory)}</p>
           </div>
 
           <div className="modal-section">
@@ -43,11 +44,11 @@ export default function StoryAnalysisSections({ story }: StoryAnalysisSectionsPr
             <div className="bias-breakdown">
               <div className="bias-card left-lean">
                 <h4>{'\u25C0'} Left-Leaning Frame</h4>
-                <p>{story.deepDive.leftSpin}</p>
+                <p>{safeText(story.deepDive.leftSpin)}</p>
               </div>
               <div className="bias-card right-lean">
                 <h4>Right-Leaning Frame {'\u25B6'}</h4>
-                <p>{story.deepDive.rightSpin}</p>
+                <p>{safeText(story.deepDive.rightSpin)}</p>
               </div>
             </div>
           </div>
@@ -60,14 +61,14 @@ export default function StoryAnalysisSections({ story }: StoryAnalysisSectionsPr
             <div className="modal-section-title">
               {'\uD83D\uDCB0'} WHO BENEFITS?
             </div>
-            <p className="analysis-text">{story.deepDive.whosBenefiting}</p>
+            <p className="analysis-text">{safeText(story.deepDive.whosBenefiting)}</p>
           </div>
 
           <div className="modal-section">
             <div className="modal-section-title">
               {'\uD83D\uDD73'} WHAT&apos;S BEING HIDDEN
             </div>
-            <p className="analysis-text speculation">{story.deepDive.whatsHidden}</p>
+            <p className="analysis-text speculation">{safeText(story.deepDive.whatsHidden)}</p>
           </div>
         </>
       )}

@@ -697,6 +697,24 @@ function recoverTruncatedJSON<T>(raw: string): T | null {
   try { return JSON.parse(recovered) as T; } catch { return null; }
 }
 
+/**
+ * Coerce a model-output field to a string. Smaller local models sometimes
+ * over-structure their JSON — they'll emit a nested object where the prompt
+ * asks for a single string. Flatten those by concatenating the leaf values
+ * into a prose-ish blob so downstream UI doesn't try to render an object
+ * as a React child.
+ */
+function coerceToString(v: unknown): string {
+  if (v == null) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  if (Array.isArray(v)) return v.map(coerceToString).filter(Boolean).join(' ');
+  if (typeof v === 'object') {
+    return Object.values(v as Record<string, unknown>).map(coerceToString).filter(Boolean).join(' ');
+  }
+  return String(v);
+}
+
 function slugify(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 80);
 }
@@ -1347,7 +1365,14 @@ async function analyzeStory(item: FeedItem, classification: Classification): Pro
 
 function feedItemToStory(item: FeedItem, classification: Classification, analysis: AnalysisResult | null, index: number, cluster?: SourceCluster): Story {
   const deepDive: DeepDive = analysis
-    ? { mainstream: analysis.mainstream_frame, realStory: analysis.real_story, leftSpin: analysis.left_spin, rightSpin: analysis.right_spin, whosBenefiting: analysis.who_benefits, whatsHidden: analysis.whats_hidden }
+    ? {
+        mainstream: coerceToString(analysis.mainstream_frame),
+        realStory: coerceToString(analysis.real_story),
+        leftSpin: coerceToString(analysis.left_spin),
+        rightSpin: coerceToString(analysis.right_spin),
+        whosBenefiting: coerceToString(analysis.who_benefits),
+        whatsHidden: coerceToString(analysis.whats_hidden),
+      }
     : { mainstream: 'Full analysis not yet generated for this story.', realStory: 'Deep analysis pending.', leftSpin: 'Deep analysis pending.', rightSpin: 'Deep analysis pending.', whosBenefiting: 'Deep analysis pending.', whatsHidden: 'Deep analysis pending.' };
 
   const story: Story = {
@@ -1644,9 +1669,13 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
     const parsed = parseClaudeJSON<{ obfuscations: any[] }>(obfuscationsRaw);
     if (!parsed?.obfuscations) return [];
     return parsed.obfuscations.map((o: any) => ({
-      category: o.category, whatHappened: o.what_happened, whyItMatters: o.why_it_matters,
-      whatsCoveringIt: o.whats_covering_it, whoBenefits: o.who_benefits,
-      detectionConfidence: o.detection_confidence, sourceUrl: o.source_url || undefined,
+      category: coerceToString(o.category),
+      whatHappened: coerceToString(o.what_happened),
+      whyItMatters: coerceToString(o.why_it_matters),
+      whatsCoveringIt: coerceToString(o.whats_covering_it),
+      whoBenefits: coerceToString(o.who_benefits),
+      detectionConfidence: o.detection_confidence,
+      sourceUrl: o.source_url || undefined,
       relatedStories: resolveSlugs(o.covering_story_slugs || []),
     }));
   })();
@@ -1667,12 +1696,14 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
           outletsInvolved.push(s.source);
         }
       }
+      const text = coerceToString(n.narrative_text);
       return {
-        text: n.narrative_text, heat: generateHeatBar(n.coherence_score),
+        text,
+        heat: generateHeatBar(n.coherence_score),
         coherenceScore: n.coherence_score,
         coherenceBreakdown: n.coherence_breakdown || undefined,
         outletsInvolved,
-        slug: slugify(String(n.narrative_text).replace(/<[^>]*>/g, '')),
+        slug: slugify(text.replace(/<[^>]*>/g, '')),
         relatedStories,
       };
     });
@@ -1766,10 +1797,10 @@ Respond in JSON:
         coherenceScore: n.coherenceScore || 0,
         outletsInvolved: n.outletsInvolved || [],
         analysisDate: new Date().toISOString(),
-        narrativeOrigin: parsed.narrative_origin,
-        coordinationEvidence: parsed.coordination_evidence,
-        whoBenefits: parsed.who_benefits,
-        suppressedAlternative: parsed.suppressed_alternative,
+        narrativeOrigin: coerceToString(parsed.narrative_origin),
+        coordinationEvidence: coerceToString(parsed.coordination_evidence),
+        whoBenefits: coerceToString(parsed.who_benefits),
+        suppressedAlternative: coerceToString(parsed.suppressed_alternative),
         relatedStories: n.relatedStories || [],
       } as NarrativeAnalysis;
     }));
@@ -1849,9 +1880,12 @@ Respond in JSON:
           query,
           analysis: {
             query, resultCount: feedItems.length, analysisDate: new Date().toISOString(),
-            mediaPattern: parsed.media_pattern, whatsRevealed: parsed.whats_revealed,
-            whatsMissing: parsed.whats_missing, connectionMap: parsed.connection_map,
-            whyItsSuppressed: parsed.why_its_suppressed, searchResults: topResults,
+            mediaPattern: coerceToString(parsed.media_pattern),
+            whatsRevealed: coerceToString(parsed.whats_revealed),
+            whatsMissing: coerceToString(parsed.whats_missing),
+            connectionMap: coerceToString(parsed.connection_map),
+            whyItsSuppressed: coerceToString(parsed.why_its_suppressed),
+            searchResults: topResults,
           },
         } as SuppressedSearchEntry;
       }));

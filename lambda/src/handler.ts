@@ -1932,12 +1932,31 @@ Respond in JSON:
   stepStart = Date.now();
   console.log('Step 9: Caching manifest + sidebar + analyses...');
   const manifest = stories.map((s) => s.slug);
+
+  // Drop sidebar items whose detail-page analyses didn't make it through
+  // Step 7b/7c. Showing them in the sidebar leads to dead-end clicks.
+  const analyzedNarrativeSlugs = new Set(narrativeAnalyses.map((na) => na.slug));
+  const narrativesForSidebar = narratives.filter((n) => n.slug && analyzedNarrativeSlugs.has(n.slug));
+  const droppedNarratives = narratives.length - narrativesForSidebar.length;
+  if (droppedNarratives > 0) {
+    console.log(`  Filtered out ${droppedNarratives} narrative(s) missing precomputed analysis`);
+  }
+
+  const analyzedSearchQueries = new Set(
+    searchAnalyses.filter((s) => s.analysis).map((s) => s.query)
+  );
+  const suppressedForSidebar = suppressedSearches.filter((q) => analyzedSearchQueries.has(q));
+  const droppedSearches = suppressedSearches.length - suppressedForSidebar.length;
+  if (droppedSearches > 0) {
+    console.log(`  Filtered out ${droppedSearches} suppressed search(es) missing analysis`);
+  }
+
   const bulkCacheOps: Promise<void>[] = [
     setCached('homepage-manifest', manifest, CACHE_TTL),
-    setCached('homepage-narratives', narratives, CACHE_TTL),
+    setCached('homepage-narratives', narrativesForSidebar, CACHE_TTL),
     setCached('homepage-obfuscations', obfuscations, CACHE_TTL),
     setCached('homepage-ticker', tickerItems, CACHE_TTL),
-    setCached('homepage-suppressed', suppressedSearches, CACHE_TTL),
+    setCached('homepage-suppressed', suppressedForSidebar, CACHE_TTL),
     setCached('homepage-narrative-analyses', narrativeAnalyses, CACHE_TTL),
     setCached('homepage-search-analyses', searchAnalyses, CACHE_TTL),
     setCached('pipeline-last-run', Date.now(), CACHE_TTL),

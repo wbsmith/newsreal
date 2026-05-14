@@ -67,7 +67,7 @@ GENERATE THE FOLLOWING (respond in JSON):
   "manipulation_index": <0-100 integer>,
   "manipulation_reasoning": "<1 sentence explaining the score>",
   "bias_tag": "<one of: LEAN LEFT | LEAN RIGHT | ESTABLISHMENT | ANTI-ESTABLISHMENT | UNREPORTED | CENTER-ESTABLISHMENT>",
-  "quick_take": "<2-3 provocative sentences for the card view. Must include at least one specific claim about timing, money, or connections. Use one [REDACTED:hidden detail] element for dramatic effect.>",
+  "quick_take": "<2-3 provocative sentences for the card view. Must include at least one specific claim about timing, money, or connections. EXACTLY ONCE in the sentence, wrap the most provocative specific claim — a name, a dollar amount, a connection — in [REDACTED:...] syntax so it renders as a click-to-reveal blackbar. EXAMPLE: '...sparked outrage over [REDACTED:$400k in AIPAC lobbying tied to Massie's primary challenger]'. DO NOT literally write the phrase 'hidden detail' — substitute the real spicy claim between the colon and the closing bracket.>",
   "mainstream_frame": "<How is mainstream/establishment media framing this story? What language and emotional hooks are they using?>",
   "real_story": "<Your most provocative speculative analysis. What's ACTUALLY driving this story? Follow the money. Look at timing. Who met with whom? What contracts were signed? What regulations were filed? Be specific with numbers and connections even if speculative.>",
   "left_spin": "<How do left-leaning outlets cover this AND what are they conveniently ignoring? Be equally critical.>",

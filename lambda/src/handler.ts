@@ -1746,7 +1746,13 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
   const suppressedSearches: string[] = (() => {
     if (!suppressedRaw) return [];
     const parsed = parseClaudeJSON<{ suppressed_searches: string[] }>(suppressedRaw);
-    return parsed?.suppressed_searches || [];
+    const raw = parsed?.suppressed_searches || [];
+    // Llama sometimes wraps each query in literal double quotes. Stripping
+    // them, because Google News interprets quoted queries as exact-phrase
+    // matches and long sentence-style queries never match exactly → 0 results.
+    return raw
+      .map((q) => coerceToString(q).trim().replace(/^["'`]+|["'`]+$/g, '').trim())
+      .filter((q) => q.length > 0);
   })();
 
   stats.tickerItems = tickerItems.length;

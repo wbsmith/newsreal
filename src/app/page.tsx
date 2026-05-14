@@ -1,16 +1,15 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
-import { Story, Narrative, Obfuscation, TickerItem, NarrativeAnalysis, SuppressedSearchEntry } from '@/types';
+import { Story, Narrative, Obfuscation, TickerItem } from '@/types';
 import { LOADING_MESSAGES } from '@/lib/loading-messages';
 import Header from '@/components/Header';
 import DisclaimerBanner from '@/components/DisclaimerBanner';
 import Ticker from '@/components/Ticker';
 import StoryCard from '@/components/StoryCard';
-import StoryModal from '@/components/StoryModal';
-import NarrativeTracker, { NarrativeTrackerHandle } from '@/components/NarrativeTracker';
+import NarrativeTracker from '@/components/NarrativeTracker';
 import ObfuscationIndex from '@/components/ObfuscationIndex';
 import SuppressedSearches from '@/components/SuppressedSearches';
 import AnalyzeArticleModal from '@/components/AnalyzeArticleModal';
@@ -18,7 +17,6 @@ import Footer from '@/components/Footer';
 
 export default function Home() {
   const router = useRouter();
-  const narrativeRef = useRef<NarrativeTrackerHandle>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMsg, setLoadingMsg] = useState(LOADING_MESSAGES[0]);
   const [activeFilter, setActiveFilter] = useState(() => {
@@ -27,14 +25,13 @@ export default function Home() {
     }
     return 'all';
   });
-  const [selectedStory, setSelectedStory] = useState<Story | null>(null);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
   const [archiveResults, setArchiveResults] = useState<Story[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
 
-  // Analyze article modal
+  // Analyze article modal (this one stays as state — it's a write action, not navigation)
   const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
 
   // Data state — empty until API responds
@@ -44,8 +41,6 @@ export default function Home() {
   const [obfuscations, setObfuscations] = useState<Obfuscation[]>([]);
   const [tickerItems, setTickerItems] = useState<TickerItem[]>([]);
   const [suppressedSearches, setSuppressedSearches] = useState<string[]>([]);
-  const [narrativeAnalyses, setNarrativeAnalyses] = useState<NarrativeAnalysis[]>([]);
-  const [searchAnalyses, setSearchAnalyses] = useState<SuppressedSearchEntry[]>([]);
 
   // Loading sequence + API fetch
   useEffect(() => {
@@ -55,7 +50,6 @@ export default function Home() {
       setLoadingMsg(LOADING_MESSAGES[msgIdx]);
     }, 1800);
 
-    // Fetch real data during loading animation
     fetch('/api/stories')
       .then((res) => res.json())
       .then((data) => {
@@ -64,8 +58,6 @@ export default function Home() {
         if (data.obfuscations?.length > 0) setObfuscations(data.obfuscations);
         if (data.ticker?.length > 0) setTickerItems(data.ticker);
         if (data.suppressedSearches?.length > 0) setSuppressedSearches(data.suppressedSearches);
-        if (data.narrativeAnalyses?.length > 0) setNarrativeAnalyses(data.narrativeAnalyses);
-        if (data.searchAnalyses?.length > 0) setSearchAnalyses(data.searchAnalyses);
       })
       .catch(() => {
         // API unavailable — sections will show empty state
@@ -82,13 +74,12 @@ export default function Home() {
     };
   }, []);
 
-
   const handleTickerClick = useCallback(
     (item: TickerItem) => {
       if (item.linkType === 'story' && item.linkRef) {
         router.push(`/story/${item.linkRef}`);
       } else if (item.linkType === 'narrative' && item.linkRef) {
-        narrativeRef.current?.analyzeNarrative(item.linkRef);
+        router.push(`/narrative/${item.linkRef}`);
       }
     },
     [router]
@@ -101,7 +92,6 @@ export default function Home() {
       const res = await fetch(`/api/search-stories?q=${encodeURIComponent(query)}`);
       const data = await res.json();
       if (data.results) {
-        // Filter out stories already loaded on the page
         const loadedSlugs = new Set(stories.map(s => s.slug));
         setArchiveResults(data.results.filter((s: Story) => !loadedSlugs.has(s.slug)));
       }
@@ -147,7 +137,6 @@ export default function Home() {
       }
     }
 
-    // Client-side search filter
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
       return base.filter(s =>
@@ -202,7 +191,7 @@ export default function Home() {
         <div className="content-layout">
           <div className="stories-top">
             <div className="stories-section-header">
-              <h2>{searchQuery ? `Search: "${searchQuery}"` : 'Today\u2019s Narrative Landscape'}</h2>
+              <h2>{searchQuery ? `Search: "${searchQuery}"` : 'Today’s Narrative Landscape'}</h2>
               <div className="line" />
               <div className="count">{filteredStories.length} STORIES {searchQuery ? 'FOUND' : 'DECODED'}</div>
             </div>
@@ -220,21 +209,21 @@ export default function Home() {
             ) : (
               <div className="stories-grid">
                 {filteredStories.slice(0, 5).map((story) => (
-                  <StoryCard key={story.id} story={story} onClick={setSelectedStory} />
+                  <StoryCard key={story.id} story={story} />
                 ))}
               </div>
             )}
           </div>
           <aside className="sidebar">
-            <NarrativeTracker ref={narrativeRef} narratives={narratives} preloadedAnalyses={narrativeAnalyses} />
+            <NarrativeTracker narratives={narratives} />
             <ObfuscationIndex obfuscations={obfuscations} />
-            <SuppressedSearches searches={suppressedSearches} preloadedAnalyses={searchAnalyses} />
+            <SuppressedSearches searches={suppressedSearches} />
           </aside>
           {filteredStories.length > 5 && (
             <div className="stories-rest">
               <div className="stories-grid">
                 {filteredStories.slice(5).map((story) => (
-                  <StoryCard key={story.id} story={story} onClick={setSelectedStory} />
+                  <StoryCard key={story.id} story={story} />
                 ))}
               </div>
             </div>
@@ -255,7 +244,7 @@ export default function Home() {
               ) : archiveResults.length > 0 ? (
                 <div className="stories-grid">
                   {archiveResults.map((story) => (
-                    <StoryCard key={story.slug} story={story} onClick={setSelectedStory} />
+                    <StoryCard key={story.slug} story={story} />
                   ))}
                 </div>
               ) : (
@@ -268,10 +257,6 @@ export default function Home() {
         </div>
       </main>
       <Footer />
-      <StoryModal
-        story={selectedStory}
-        onClose={() => setSelectedStory(null)}
-      />
       <AnalyzeArticleModal
         open={showAnalyzeModal}
         onClose={() => setShowAnalyzeModal(false)}

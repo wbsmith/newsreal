@@ -1,72 +1,16 @@
 'use client';
 
-import { useState, forwardRef, useImperativeHandle } from 'react';
-import { SearchAnalysis, SuppressedSearchEntry } from '@/types';
-import SearchAnalysisModal from './SearchAnalysisModal';
-
-export interface SuppressedSearchesHandle {
-  analyzeSearch: (query: string) => void;
-}
+import Link from 'next/link';
 
 interface SuppressedSearchesProps {
   searches: string[];
-  preloadedAnalyses?: SuppressedSearchEntry[];
 }
 
-const SuppressedSearches = forwardRef<SuppressedSearchesHandle, SuppressedSearchesProps>(
-  function SuppressedSearches({ searches, preloadedAnalyses }, ref) {
-  const [analysis, setAnalysis] = useState<SearchAnalysis | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [activeQuery, setActiveQuery] = useState<string | null>(null);
-
-  async function handleSearch(query: string) {
-    setActiveQuery(query);
-    setError(null);
-
-    // Check preloaded analyses first (instant)
-    const preloaded = preloadedAnalyses?.find((e) => e.query === query);
-    if (preloaded?.analysis) {
-      setAnalysis(preloaded.analysis);
-      setLoading(false);
-      return;
-    }
-
-    // Fall back to API
-    setLoading(true);
-    setAnalysis(null);
-    try {
-      const res = await fetch(`/api/suppressed-search?q=${encodeURIComponent(query)}`);
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `Search failed (${res.status})`);
-      }
-      const data: SearchAnalysis = await res.json();
-      setAnalysis(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Search analysis failed');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useImperativeHandle(ref, () => ({
-    analyzeSearch(query: string) {
-      handleSearch(query);
-    },
-  }));
-
-  function handleClose() {
-    setAnalysis(null);
-    setLoading(false);
-    setError(null);
-    setActiveQuery(null);
-  }
-
+export default function SuppressedSearches({ searches }: SuppressedSearchesProps) {
   return (
     <div className="sidebar-panel">
       <div className="panel-header">
-        <span className="icon">{'\uD83D\uDD0D'}</span>
+        <span className="icon">🔍</span>
         <h3>Suppressed Searches</h3>
       </div>
       <div className="panel-body">
@@ -75,35 +19,17 @@ const SuppressedSearches = forwardRef<SuppressedSearchesHandle, SuppressedSearch
             <div className="empty-state-message">CALIBRATING SEARCH VECTORS...</div>
           </div>
         ) : searches.map((s, i) => (
-          <div
+          <Link
             key={i}
-            className={`search-item ${activeQuery === s ? 'search-item-active' : ''}`}
-            role="button"
-            tabIndex={0}
-            onClick={() => handleSearch(s)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                handleSearch(s);
-              }
-            }}
+            href={`/search-analysis/${encodeURIComponent(s)}`}
+            prefetch
+            className="search-item"
+            style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
           >
-            {'\u2192'} {s}
-            {activeQuery === s && loading && (
-              <span className="analyzing-tag"> [ANALYZING...]</span>
-            )}
-          </div>
+            → {s}
+          </Link>
         ))}
       </div>
-
-      <SearchAnalysisModal
-        analysis={analysis}
-        loading={loading}
-        error={error}
-        onClose={handleClose}
-      />
     </div>
   );
-});
-
-export default SuppressedSearches;
+}

@@ -1629,9 +1629,10 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
   stepTime('Step 5b', stepStart);
 
   // Step 6: Build Story objects (with source network from dedup clusters)
+  console.log(`Step 6: Building ${sorted.length} Story objects with source-network metadata...`);
   const stories: Story[] = sorted.map((c, i) => feedItemToStory(c.item, c.classification, analysisMap.get(i) ?? null, i, clustersByLink.get(c.item.link)));
   const networkedCount = stories.filter(s => s.sourceNetwork).length;
-  console.log(`  ${networkedCount} stories have source network data`);
+  console.log(`  ${networkedCount}/${stories.length} stories have multi-source network data`);
 
   // Step 7: Sidebar data
   stepStart = Date.now();

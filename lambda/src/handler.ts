@@ -156,7 +156,10 @@ const LLM_BASE_URL = process.env.LLM_BASE_URL || 'http://localhost:1234/v1';
 // Defaults assume ~3000 tokens of reasoning headroom + ~1000 of output.
 const CLASSIFY_MAX_TOKENS = Number(process.env.CLASSIFY_MAX_TOKENS ?? 4096);
 const ANALYZE_MAX_TOKENS = Number(process.env.ANALYZE_MAX_TOKENS ?? 8192);
-const CACHE_TTL = 43200; // 12 hours — pipeline runs 3x/day (every 8h)
+// 72 hours — long enough that the sidebar survives multi-day gaps between
+// manual pipeline runs. Each run overwrites these keys, so stale data is
+// naturally bounded by user cadence rather than DDB-TTL ejection.
+const CACHE_TTL = 72 * 60 * 60;
 const ENABLE_ARTICLE_FETCH = false; // Feature flag: fetch full article text via Readability
 const ARTICLE_FETCH_BATCH_SIZE = 20;
 const ARTICLE_FETCH_TIMEOUT = 10000; // 10s per article

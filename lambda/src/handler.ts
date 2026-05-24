@@ -166,6 +166,10 @@ const ARTICLE_FETCH_TIMEOUT = 10000; // 10s per article
 const ARTICLE_TEXT_LIMIT_HAIKU = 2000;  // chars for classify prompt
 const ARTICLE_TEXT_LIMIT_SONNET = 5000; // chars for analysis prompt
 
+const RANK_WEIGHT_MANIPULATION = Number(process.env.RANK_WEIGHT_MANIPULATION ?? 0.6);
+const RANK_WEIGHT_RECENCY = Number(process.env.RANK_WEIGHT_RECENCY ?? 0.2);
+const RANK_WEIGHT_PRESTIGE = Number(process.env.RANK_WEIGHT_PRESTIGE ?? 0.2);
+
 const ALL_CATEGORIES: Category[] = ['politics', 'tech', 'finance', 'world', 'science', 'deep-state'];
 const BONUS_CATEGORIES: Category[] = ['finance', 'science'];
 const BONUS_PER_CATEGORY = 15;
@@ -853,13 +857,20 @@ export function selectForClassification(items: FeedItem[], total: number, minPer
   return selected;
 }
 
-function categoryBalancedSort(classified: { item: FeedItem; classification: Classification }[]): { item: FeedItem; classification: Classification }[] {
-  const priorityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+function rankScore(item: FeedItem, classification: Classification): number {
+  const manipulation = classification.manipulation_index / 100;
+  const ageMs = Date.now() - new Date(item.pubDate).getTime();
+  const ageHours = isNaN(ageMs) ? 24 : ageMs / (1000 * 60 * 60);
+  const recency = Math.max(0, 1 - ageHours / 24);
+  const prestige = TOP_TIER_SOURCES.has(item.source.toUpperCase()) ? 1.0 : 0.0;
+  return RANK_WEIGHT_MANIPULATION * manipulation
+       + RANK_WEIGHT_RECENCY * recency
+       + RANK_WEIGHT_PRESTIGE * prestige;
+}
 
-  const byPriority = (a: { classification: Classification }, b: { classification: Classification }) => {
-    const pDiff = priorityOrder[a.classification.priority] - priorityOrder[b.classification.priority];
-    return pDiff !== 0 ? pDiff : b.classification.manipulation_index - a.classification.manipulation_index;
-  };
+function categoryBalancedSort(classified: { item: FeedItem; classification: Classification }[]): { item: FeedItem; classification: Classification }[] {
+  const byRank = (a: { item: FeedItem; classification: Classification }, b: { item: FeedItem; classification: Classification }) =>
+    rankScore(b.item, b.classification) - rankScore(a.item, a.classification);
 
   const categoryGroups = new Map<Category, { item: FeedItem; classification: Classification }[]>();
   for (const entry of classified) {
@@ -870,7 +881,7 @@ function categoryBalancedSort(classified: { item: FeedItem; classification: Clas
   }
 
   for (const group of categoryGroups.values()) {
-    group.sort(byPriority);
+    group.sort(byRank);
   }
 
   const result: { item: FeedItem; classification: Classification }[] = [];

@@ -9,6 +9,7 @@ async function main() {
   console.log(`Analyze model:  ${process.env.LOCAL_ANALYZE_MODEL || 'gemma4-31b'}`);
   console.log(`Classify count: ${process.env.CLASSIFY_COUNT || '120'} (batch ${process.env.CLASSIFY_BATCH_SIZE || '10'})`);
   console.log(`Analyze count:  ${process.env.DEEP_ANALYZE_COUNT || '120'} (batch ${process.env.ANALYZE_BATCH_SIZE || '5'})`);
+  console.log(`Rank weights:   manipulation=${process.env.RANK_WEIGHT_MANIPULATION ?? '0.6'} recency=${process.env.RANK_WEIGHT_RECENCY ?? '0.2'} prestige=${process.env.RANK_WEIGHT_PRESTIGE ?? '0.2'}`);
   console.log('');
 
   const result = await runFullPipeline();

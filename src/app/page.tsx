@@ -207,11 +207,18 @@ export default function Home() {
                 </div>
               </div>
             ) : (
-              <div className="stories-grid">
-                {filteredStories.slice(0, 5).map((story, i) => (
-                  <StoryCard key={story.id} story={story} hero={i === 0} />
-                ))}
-              </div>
+              <>
+                <div className="stories-grid stories-grid-hero">
+                  <StoryCard story={filteredStories[0]} tier="hero" />
+                </div>
+                {filteredStories.slice(1).filter(s => s.featured).length > 0 && (
+                  <div className="stories-grid stories-grid-featured">
+                    {filteredStories.slice(1).filter(s => s.featured).map((story) => (
+                      <StoryCard key={story.id} story={story} tier="featured" />
+                    ))}
+                  </div>
+                )}
+              </>
             )}
           </div>
           <aside className="sidebar">
@@ -219,11 +226,11 @@ export default function Home() {
             <ObfuscationIndex obfuscations={obfuscations} />
             <SuppressedSearches searches={suppressedSearches} />
           </aside>
-          {filteredStories.length > 5 && (
+          {filteredStories.filter(s => !s.featured).length > 0 && (
             <div className="stories-rest">
-              <div className="stories-grid">
-                {filteredStories.slice(5).map((story) => (
-                  <StoryCard key={story.id} story={story} />
+              <div className="stories-grid stories-grid-compact">
+                {filteredStories.filter(s => !s.featured).map((story) => (
+                  <StoryCard key={story.id} story={story} tier="compact" />
                 ))}
               </div>
             </div>
@@ -242,9 +249,9 @@ export default function Home() {
                   <div className="empty-state-message">SCANNING ARCHIVES...</div>
                 </div>
               ) : archiveResults.length > 0 ? (
-                <div className="stories-grid">
+                <div className="stories-grid stories-grid-compact">
                   {archiveResults.map((story) => (
-                    <StoryCard key={story.slug} story={story} />
+                    <StoryCard key={story.slug} story={story} tier="compact" />
                   ))}
                 </div>
               ) : (

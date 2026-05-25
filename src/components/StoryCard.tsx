@@ -8,16 +8,15 @@ import RedactedText from './RedactedText';
 
 interface StoryCardProps {
   story: Story;
-  hero?: boolean;
+  tier?: 'hero' | 'featured' | 'compact';
 }
 
-export default function StoryCard({ story, hero }: StoryCardProps) {
-  const classes = ['story-card', hero && 'hero', story.featured && 'featured'].filter(Boolean).join(' ');
+export default function StoryCard({ story, tier = 'featured' }: StoryCardProps) {
   return (
     <Link
       href={`/story/${story.slug}`}
       prefetch
-      className={classes}
+      className={`story-card ${tier}`}
       style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
     >
       <article>
@@ -33,10 +32,14 @@ export default function StoryCard({ story, hero }: StoryCardProps) {
             )}
           </div>
           <h3 className="story-headline">{story.headline}</h3>
-          <p className="story-summary">{story.summary}</p>
-          <ManipulationMeter score={story.manipulationScore} />
+          {tier !== 'compact' && (
+            <>
+              <p className="story-summary">{story.summary}</p>
+              <ManipulationMeter score={story.manipulationScore} />
+            </>
+          )}
         </div>
-        {story.featured && story.realAnalysis && (
+        {tier !== 'compact' && story.realAnalysis && (
           <div className="story-real">
             <p>
               <RedactedText text={story.realAnalysis} />

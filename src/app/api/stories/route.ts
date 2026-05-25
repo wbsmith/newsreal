@@ -38,14 +38,13 @@ export async function GET(request: Request) {
   if (cachedSearchAnalyses) searchAnalyses = cachedSearchAnalyses;
 
   // Primary path: manifest (ordered slug list) → batch get full stories from DynamoDB
-  if (manifest && manifest.length > 0) {
-    console.log(`Manifest loaded: ${manifest.length} slugs, first=${manifest[0]}, type=${typeof manifest[0]}`);
+  const validManifest = manifest?.filter((s) => s && s.length > 0) ?? [];
+  if (validManifest.length > 0) {
     try {
-      const items = await batchGetStories(manifest);
-      console.log(`Batch get returned ${items.length} items`);
+      const items = await batchGetStories(validManifest);
       // Re-order to match manifest order
       const bySlug = new Map(items.map((item) => [item.id as string, item]));
-      stories = manifest
+      stories = validManifest
         .map((slug) => bySlug.get(slug))
         .filter(Boolean) as unknown as Story[];
       source = 'manifest';

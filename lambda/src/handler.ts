@@ -1391,6 +1391,16 @@ async function analyzeStory(item: FeedItem, classification: Classification): Pro
   return parsed;
 }
 
+function summarize(item: FeedItem, classification: Classification, analysis: AnalysisResult | null): string {
+  const quickTake = analysis?.quick_take || classification.quick_take;
+  if (quickTake) return quickTake.slice(0, 500);
+  const snippet = item.contentSnippet || item.content || '';
+  const headline = item.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const snipNorm = snippet.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (snipNorm.startsWith(headline)) return '';
+  return snippet.slice(0, 500);
+}
+
 function feedItemToStory(item: FeedItem, classification: Classification, analysis: AnalysisResult | null, index: number, cluster?: SourceCluster): Story {
   const deepDive: DeepDive = analysis
     ? {
@@ -1405,9 +1415,9 @@ function feedItemToStory(item: FeedItem, classification: Classification, analysi
 
   const story: Story = {
     id: index + 1, slug: slugify(item.title), category: classification.category,
-    featured: index === 0, source: item.source.toUpperCase(), sourceUrl: item.link,
+    featured: false, source: item.source.toUpperCase(), sourceUrl: item.link,
     time: relativeTime(item.pubDate), headline: item.title,
-    summary: (item.contentSnippet || item.content || classification.quick_take).slice(0, 500),
+    summary: summarize(item, classification, analysis),
     biasTag: mapBiasTag(classification.bias_tag),
     manipulationScore: analysis?.manipulation_index ?? classification.manipulation_index,
     manipulationBreakdown: analysis?.manipulation_breakdown,
@@ -1659,6 +1669,11 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
   // Step 6: Build Story objects (with source network from dedup clusters)
   console.log(`Step 6: Building ${sorted.length} Story objects with source-network metadata...`);
   const stories: Story[] = sorted.map((c, i) => feedItemToStory(c.item, c.classification, analysisMap.get(i) ?? null, i, clustersByLink.get(c.item.link)));
+  const featuredPerCat = new Map<string, number>();
+  for (const story of stories) {
+    const count = featuredPerCat.get(story.category) || 0;
+    if (count < 5) { story.featured = true; featuredPerCat.set(story.category, count + 1); }
+  }
   const networkedCount = stories.filter(s => s.sourceNetwork).length;
   console.log(`  ${networkedCount}/${stories.length} stories have multi-source network data`);
 

@@ -208,8 +208,8 @@ export default function Home() {
               </div>
             ) : (
               <div className="stories-grid">
-                {filteredStories.slice(0, 5).map((story) => (
-                  <StoryCard key={story.id} story={story} />
+                {filteredStories.slice(0, 5).map((story, i) => (
+                  <StoryCard key={story.id} story={story} hero={i === 0} />
                 ))}
               </div>
             )}

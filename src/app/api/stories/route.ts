@@ -3,6 +3,8 @@ import { getCached } from '@/lib/cache';
 import { batchGetStories, getRecentStories } from '@/lib/db';
 import { Story, Narrative, Obfuscation, TickerItem, NarrativeAnalysis, SuppressedSearchEntry } from '@/types';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const category = searchParams.get('category');

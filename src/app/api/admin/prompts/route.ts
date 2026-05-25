@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCached, setCached } from '@/lib/cache';
 
+export const dynamic = 'force-dynamic';
+
 const PROMPT_TTL = 315360000; // ~10 years
 
 // Registry of all editable prompts with descriptions and hardcoded defaults from Lambda

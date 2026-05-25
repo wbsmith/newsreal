@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCached } from '@/lib/cache';
 
+export const dynamic = 'force-dynamic';
+
 interface VisitorRecord {
   ip: string;
   userAgent: string;

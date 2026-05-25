@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST() {
   try {
     const region = process.env.NEWSREAL_AWS_REGION || 'us-east-1';

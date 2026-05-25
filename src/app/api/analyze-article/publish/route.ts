@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { putStory } from '@/lib/db';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: Request) {
   let body: { story: Record<string, unknown> };
   try {

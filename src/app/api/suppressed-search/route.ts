@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getCached } from '@/lib/cache';
 import { SearchAnalysis } from '@/types';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   const query = request.nextUrl.searchParams.get('q');
   if (!query) {

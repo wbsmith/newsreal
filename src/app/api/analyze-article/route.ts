@@ -6,6 +6,8 @@ import { classifyStory, analyzeStory, feedItemToStory } from '@/lib/analysis/sto
 import { getCached, setCached } from '@/lib/cache';
 import { FeedItem } from '@/lib/ingestion/rss-parser';
 
+export const dynamic = 'force-dynamic';
+
 const RATE_LIMIT = 10;
 const RATE_LIMIT_TTL = 86400; // 24 hours
 

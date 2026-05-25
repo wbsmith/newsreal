@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { getCached } from '@/lib/cache';
 
+export const dynamic = 'force-dynamic';
+
 interface DailyAnalytics {
   pageviews: number;
   uniqueIPs: string[];

@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { Story } from '@/types';
 import BiasTag from './BiasTag';
 import ManipulationMeter from './ManipulationMeter';
-import RedactedText from './RedactedText';
 
 interface StoryCardProps {
   story: Story;
@@ -32,18 +31,14 @@ export default function StoryCard({ story, tier = 'featured' }: StoryCardProps) 
             )}
           </div>
           <h3 className="story-headline">{story.headline}</h3>
+          {story.summary && <p className="story-summary">{story.summary}</p>}
           {tier !== 'compact' && (
-            <>
-              <p className="story-summary">{story.summary}</p>
-              <ManipulationMeter score={story.manipulationScore} />
-            </>
+            <ManipulationMeter score={story.manipulationScore} />
           )}
         </div>
         {tier !== 'compact' && story.realAnalysis && (
           <div className="story-real">
-            <p>
-              <RedactedText text={story.realAnalysis} />
-            </p>
+            <p>{story.realAnalysis}</p>
           </div>
         )}
       </article>

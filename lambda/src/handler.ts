@@ -61,6 +61,23 @@ interface AnalysisResult {
   connecting_dots?: string;
 }
 
+interface AssessmentResult {
+  category: Category;
+  bias_tag: string;
+  manipulation_index: number;
+  manipulation_breakdown: ManipulationBreakdown;
+  priority: 'high' | 'medium' | 'low';
+  has_full_text: boolean;
+  quick_take: string;
+  mainstream_frame: string;
+  real_story: string;
+  left_spin: string;
+  right_spin: string;
+  who_benefits: string;
+  whats_hidden: string;
+  connecting_dots?: string;
+}
+
 interface DeepDive {
   mainstream: string;
   realStory: string;
@@ -146,16 +163,10 @@ interface SourceNetwork {
 // Module-level prompt overrides — set in runFullPipeline(), read by prompt builders
 let activePromptOverrides = new Map<string, string>();
 
-const CLASSIFY_BATCH_SIZE = Number(process.env.CLASSIFY_BATCH_SIZE ?? 10);
-const ANALYZE_BATCH_SIZE = Number(process.env.ANALYZE_BATCH_SIZE ?? 5);
-const CLASSIFY_COUNT = Number(process.env.CLASSIFY_COUNT ?? 120);
-const DEEP_ANALYZE_COUNT = Number(process.env.DEEP_ANALYZE_COUNT ?? 120);
-const CLASSIFY_MODEL = process.env.LOCAL_CLASSIFY_MODEL || 'nemotron-3-nano-omni';
+const ASSESS_BATCH_SIZE = Number(process.env.ASSESS_BATCH_SIZE ?? 10);
+const ASSESS_COUNT = Number(process.env.ASSESS_COUNT ?? process.env.CLASSIFY_COUNT ?? 150);
 const ANALYZE_MODEL = process.env.LOCAL_ANALYZE_MODEL || 'gemma4-31b';
 const LLM_BASE_URL = process.env.LLM_BASE_URL || 'http://localhost:1234/v1';
-// Reasoning models burn tokens on internal thinking before emitting JSON.
-// Defaults assume ~3000 tokens of reasoning headroom + ~1000 of output.
-const CLASSIFY_MAX_TOKENS = Number(process.env.CLASSIFY_MAX_TOKENS ?? 4096);
 const ANALYZE_MAX_TOKENS = Number(process.env.ANALYZE_MAX_TOKENS ?? 8192);
 // 72 hours — long enough that the sidebar survives multi-day gaps between
 // manual pipeline runs. Each run overwrites these keys, so stale data is
@@ -582,22 +593,6 @@ async function fetchArticleTexts(items: FeedItem[]): Promise<{ fetched: number; 
 
 // ─── Local LLM Calls (OpenAI-compatible: LM Studio / Ollama / vLLM) ───
 
-async function classifyWithHaiku(prompt: string): Promise<string | null> {
-  try {
-    const start = Date.now();
-    const response = await getLLM().chat.completions.create({
-      model: CLASSIFY_MODEL,
-      max_tokens: CLASSIFY_MAX_TOKENS,
-      messages: [{ role: 'user', content: prompt }],
-    });
-    track(CLASSIFY_MODEL, 'classify', response.usage?.prompt_tokens ?? 0, response.usage?.completion_tokens ?? 0, Date.now() - start);
-    return response.choices[0]?.message?.content ?? null;
-  } catch (err) {
-    console.error('Classify LLM error:', err instanceof Error ? err.message : err);
-    return null;
-  }
-}
-
 async function analyzeWithSonnet(systemPrompt: string, userPrompt: string, label = 'analyze'): Promise<string | null> {
   try {
     const start = Date.now();
@@ -871,8 +866,10 @@ export function selectForClassification(items: FeedItem[], total: number, minPer
   return selected;
 }
 
-function rankScore(item: FeedItem, classification: Classification): number {
-  const manipulation = classification.manipulation_index / 100;
+type AssessedEntry = { item: FeedItem; assessment: AssessmentResult };
+
+function rankScore(item: FeedItem, assessment: AssessmentResult): number {
+  const manipulation = assessment.manipulation_index / 100;
   const ageMs = Date.now() - new Date(item.pubDate).getTime();
   const ageHours = isNaN(ageMs) ? 24 : ageMs / (1000 * 60 * 60);
   const recency = Math.max(0, 1 - ageHours / 24);
@@ -882,13 +879,13 @@ function rankScore(item: FeedItem, classification: Classification): number {
        + RANK_WEIGHT_PRESTIGE * prestige;
 }
 
-function categoryBalancedSort(classified: { item: FeedItem; classification: Classification }[]): { item: FeedItem; classification: Classification }[] {
-  const byRank = (a: { item: FeedItem; classification: Classification }, b: { item: FeedItem; classification: Classification }) =>
-    rankScore(b.item, b.classification) - rankScore(a.item, a.classification);
+function categoryBalancedSort(assessed: AssessedEntry[]): AssessedEntry[] {
+  const byRank = (a: AssessedEntry, b: AssessedEntry) =>
+    rankScore(b.item, b.assessment) - rankScore(a.item, a.assessment);
 
-  const categoryGroups = new Map<Category, { item: FeedItem; classification: Classification }[]>();
-  for (const entry of classified) {
-    const cat = entry.classification.category;
+  const categoryGroups = new Map<Category, AssessedEntry[]>();
+  for (const entry of assessed) {
+    const cat = entry.assessment.category;
     const group = categoryGroups.get(cat) || [];
     group.push(entry);
     categoryGroups.set(cat, group);
@@ -898,7 +895,7 @@ function categoryBalancedSort(classified: { item: FeedItem; classification: Clas
     group.sort(byRank);
   }
 
-  const result: { item: FeedItem; classification: Classification }[] = [];
+  const result: AssessedEntry[] = [];
   const used = new Set<number>();
   let round = 0;
   let added = true;
@@ -909,7 +906,7 @@ function categoryBalancedSort(classified: { item: FeedItem; classification: Clas
       const group = categoryGroups.get(cat);
       if (!group || round >= group.length) continue;
       const entry = group[round];
-      const idx = classified.indexOf(entry);
+      const idx = assessed.indexOf(entry);
       if (!used.has(idx)) {
         result.push(entry);
         used.add(idx);
@@ -919,24 +916,11 @@ function categoryBalancedSort(classified: { item: FeedItem; classification: Clas
     round++;
   }
 
-  for (let i = 0; i < classified.length; i++) {
-    if (!used.has(i)) result.push(classified[i]);
+  for (let i = 0; i < assessed.length; i++) {
+    if (!used.has(i)) result.push(assessed[i]);
   }
 
   return result;
-}
-
-type ClassifiedEntry = { item: FeedItem; classification: Classification };
-
-function groupByCategory(items: ClassifiedEntry[]): Map<Category, ClassifiedEntry[]> {
-  const groups = new Map<Category, ClassifiedEntry[]>();
-  for (const entry of items) {
-    const cat = entry.classification.category;
-    const group = groups.get(cat) || [];
-    group.push(entry);
-    groups.set(cat, group);
-  }
-  return groups;
 }
 
 // ─── Prompts ───
@@ -959,36 +943,8 @@ function getSystemPrompt(): string {
   return activePromptOverrides.get('analysis-system') || DEFAULT_SYSTEM_PROMPT;
 }
 
-function buildClassifyPrompt(headline: string, summary: string, source: string, fullText?: string): string {
-  const textSection = fullText
-    ? `Article text (first ${ARTICLE_TEXT_LIMIT_HAIKU} chars): ${fullText.slice(0, ARTICLE_TEXT_LIMIT_HAIKU)}`
-    : `Summary: ${summary}`;
-  const hasText = !!fullText;
-
-  return `Classify this news story and score its manipulation level. Respond ONLY in JSON, no other text.
-
-Headline: ${headline}
-${textSection}
-Source: ${source}
-Has full article text: ${hasText}
-
-MANIPULATION INDEX — score each dimension 0-20, then sum for total (0-100):
-1. EMOTIONAL MANIPULATION (0-20): Loaded language, fear/outrage triggers, urgency framing, identity appeals
-2. SOURCE TRANSPARENCY (0-20): Named vs anonymous sources, verifiability of claims
-3. FRAMING BIAS (0-20): How hard the piece pushes a single interpretation
-4. SELECTIVE OMISSION (0-20): Missing financial context, timing, history, counter-evidence
-5. HEADLINE ACCURACY (0-20): Does headline match the actual content?${!hasText ? '\nNote: Without full text, score source_transparency and headline_accuracy conservatively (mid-range).' : ''}
-
-{
-  "category": "<politics|tech|finance|world|science|deep-state>",
-  "bias_tag": "<LEAN LEFT|LEAN RIGHT|ESTABLISHMENT|ANTI-ESTABLISHMENT|UNREPORTED|CENTER-ESTABLISHMENT>",
-  "manipulation_index": <0-100 sum of 5 dimensions>,
-  "priority": "<high|medium|low>",
-  "quick_take": "<1 provocative sentence>"
-}`;
-}
-
-function buildAnalysisPrompt(headline: string, source: string, text: string, timestamp: string, hasFullText: boolean): { system: string; user: string } {
+function buildAssessPrompt(headline: string, source: string, text: string, timestamp: string, hasFullText: boolean, categoryHint?: string): { system: string; user: string } {
+  const hintLine = categoryHint ? `\n- Category hint (from embedding similarity — override if clearly wrong): ${categoryHint}` : '';
   return {
     system: getSystemPrompt(),
     user: `STORY DATA:
@@ -997,7 +953,7 @@ function buildAnalysisPrompt(headline: string, source: string, text: string, tim
 - ${hasFullText ? 'Full article text' : 'RSS snippet (full text unavailable)'}: ${text}
 - Has full article text: ${hasFullText}
 - Publication time: ${timestamp}
-- Entities mentioned: Auto-detect from text
+- Entities mentioned: Auto-detect from text${hintLine}
 
 MANIPULATION INDEX RUBRIC — Score each dimension independently (0-20), then sum for the total (0-100). Provide a 1-sentence justification for each score.
 
@@ -1035,6 +991,8 @@ ${!hasFullText ? '\nNote: Without full article text, score source_transparency a
 GENERATE THE FOLLOWING (respond in JSON):
 
 {
+  "category": "<one of: politics | tech | finance | world | science | deep-state>",
+  "bias_tag": "<one of: LEAN LEFT | LEAN RIGHT | ESTABLISHMENT | ANTI-ESTABLISHMENT | UNREPORTED | CENTER-ESTABLISHMENT>",
   "manipulation_breakdown": {
     "emotional_manipulation": { "score": <0-20>, "reason": "<1 sentence>" },
     "source_transparency": { "score": <0-20>, "reason": "<1 sentence>" },
@@ -1044,7 +1002,6 @@ GENERATE THE FOLLOWING (respond in JSON):
   },
   "manipulation_index": <0-100 sum of the 5 scores above>,
   "has_full_text": ${hasFullText},
-  "bias_tag": "<one of: LEAN LEFT | LEAN RIGHT | ESTABLISHMENT | ANTI-ESTABLISHMENT | UNREPORTED | CENTER-ESTABLISHMENT>",
   "quick_take": "<2-3 provocative sentences for the card view. Must include at least one specific claim about timing, money, or connections. EXACTLY ONCE in the sentence, wrap the most provocative specific claim — a name, a dollar amount, a connection — in [REDACTED:...] syntax so it renders as a click-to-reveal blackbar. EXAMPLE: '...sparked outrage over [REDACTED:$400k in AIPAC lobbying tied to Massie's primary challenger]'. DO NOT literally write the phrase 'hidden detail' — substitute the real spicy claim between the colon and the closing bracket.>",
   "mainstream_frame": "<How is mainstream/establishment media framing this story? What language and emotional hooks are they using?>",
   "real_story": "<Your most provocative speculative analysis. What's ACTUALLY driving this story? Follow the money. Look at timing. Who met with whom? What contracts were signed? What regulations were filed? Be specific with numbers and connections even if speculative.>",
@@ -1212,14 +1169,6 @@ Respond in JSON:
 
 // ─── Pipeline Steps ───
 
-export const classifyStats = { cacheHits: 0, centroidHits: 0, fullLLMCalls: 0, slimLLMCalls: 0, embedFailures: 0 };
-export function resetClassifyStats(): void {
-  classifyStats.cacheHits = 0;
-  classifyStats.centroidHits = 0;
-  classifyStats.fullLLMCalls = 0;
-  classifyStats.slimLLMCalls = 0;
-  classifyStats.embedFailures = 0;
-}
 
 // ─── Phase 4: centroid match + Phase 5: heuristic priority + slim LLM ───
 
@@ -1257,173 +1206,111 @@ function heuristicPriority(item: FeedItem): 'high' | 'medium' | 'low' {
   return 'low';
 }
 
-function buildSlimClassifyPrompt(item: FeedItem, category: Category): string {
-  const snippet = (item.contentSnippet || item.content || '').slice(0, 600);
-  return `Classify the bias and manipulation of this news item. Category is already known: ${category}.
+// ─── Unified Assess ───
 
-HEADLINE: "${item.title}"
-SOURCE: ${item.source}
-SNIPPET: ${snippet}
+const assessStats = { cacheHits: 0, legacyUpgrades: 0, llmCalls: 0, embedFailures: 0 };
+function resetAssessStats() { assessStats.cacheHits = 0; assessStats.legacyUpgrades = 0; assessStats.llmCalls = 0; assessStats.embedFailures = 0; }
 
-Evaluate:
-- bias_tag: ONE OF [LEAN LEFT, LEAN RIGHT, ESTABLISHMENT, ANTI-ESTABLISHMENT, UNREPORTED, CENTER-ESTABLISHMENT]
-- manipulation_index: 0-100, how manipulative is the language and framing
-- quick_take: ONE sentence (max 25 words), provocative but factual
-
-Respond ONLY with valid JSON. No markdown, no preamble:
-{"bias_tag":"...","manipulation_index":0,"quick_take":"..."}`;
-}
-
-interface SlimClassification {
-  bias_tag: string;
-  manipulation_index: number;
-  quick_take: string;
-}
-
-export async function classifyStory(item: FeedItem): Promise<Classification | null> {
+export async function assessStory(item: FeedItem): Promise<AssessmentResult | null> {
   const slug = slugify(item.title);
   const validCategories: Category[] = ['politics', 'tech', 'finance', 'world', 'science', 'deep-state'];
-  const priorityHeuristic = heuristicPriority(item);
 
-  // Embed the headline for cache + centroid lookups
   const embedding = await embed(item.title);
-  if (!embedding) classifyStats.embedFailures++;
+  if (!embedding) assessStats.embedFailures++;
 
-  // ─── Tier 1: full cache hit (Phase 3) ───
+  // Path A/B: cache lookup
+  let categoryHint: string | undefined;
   if (embedding) {
     const hit = findNearestNeighbor(embedding);
     if (hit) {
-      classifyStats.cacheHits++;
-      upsertStory({
-        slug,
-        headline: item.title,
-        source: item.source,
-        publishedAt: item.pubDate,
-        category: hit.story.category,
-        biasTag: hit.story.biasTag,
-        manipulationIndex: hit.story.manipulationIndex,
-        priority: hit.story.priority,
-        quickTake: hit.story.quickTake,
-        embedding,
-      });
-      return {
-        category: hit.story.category as Category,
-        bias_tag: hit.story.biasTag,
-        manipulation_index: hit.story.manipulationIndex,
-        priority: hit.story.priority as 'high' | 'medium' | 'low',
-        quick_take: hit.story.quickTake,
-      };
+      if (hit.story.analysisJson) {
+        // Path A: full cache hit
+        try {
+          const cached = JSON.parse(hit.story.analysisJson) as AssessmentResult;
+          cached.priority = heuristicPriority(item);
+          assessStats.cacheHits++;
+          upsertStory({
+            slug, headline: item.title, source: item.source, publishedAt: item.pubDate,
+            category: cached.category, biasTag: cached.bias_tag,
+            manipulationIndex: cached.manipulation_index, priority: cached.priority,
+            quickTake: cached.quick_take, embedding, analysisJson: hit.story.analysisJson,
+          });
+          return cached;
+        } catch {}
+      }
+      // Path B: legacy cache (has classification but no analysis_json)
+      categoryHint = hit.story.category;
+      assessStats.legacyUpgrades++;
     }
   }
 
-  // ─── Tier 2: centroid + hint → slim LLM (Phase 4 + 5) ───
-  let category: Category | null = null;
-  if (embedding && !DISABLE_CENTROID) {
+  // Centroid hint (if no cache-based hint yet)
+  if (!categoryHint && embedding && !DISABLE_CENTROID) {
     const centroids = await loadCentroids();
     const match = matchByCentroid(embedding, centroids);
-    const matchValid = match && validCategories.includes(match.category as Category);
-
-    if (matchValid && match!.similarity >= CENTROID_MIN_SIMILARITY && match!.margin >= CENTROID_MIN_MARGIN) {
-      category = match!.category as Category;
-    } else if (item.hintCategory && matchValid && match!.category === item.hintCategory) {
-      // Lower confidence centroid corroborated by RSS hint — accept it.
-      category = item.hintCategory;
+    if (match && validCategories.includes(match.category as Category) &&
+        match.similarity >= CENTROID_MIN_SIMILARITY && match.margin >= CENTROID_MIN_MARGIN) {
+      categoryHint = match.category;
     }
   }
 
-  if (category) {
-    classifyStats.slimLLMCalls++;
-    const slimRaw = await classifyWithHaiku(buildSlimClassifyPrompt(item, category));
-    const slim = slimRaw ? parseClaudeJSON<SlimClassification>(slimRaw) : null;
-    if (slim) {
-      const parsed: Classification = {
-        category,
-        bias_tag: slim.bias_tag,
-        manipulation_index: slim.manipulation_index,
-        priority: priorityHeuristic,
-        quick_take: slim.quick_take,
-      };
-      if (embedding) {
-        upsertStory({
-          slug, headline: item.title, source: item.source, publishedAt: item.pubDate,
-          category: parsed.category, biasTag: parsed.bias_tag,
-          manipulationIndex: parsed.manipulation_index, priority: parsed.priority,
-          quickTake: parsed.quick_take, embedding,
-        });
-      }
-      return parsed;
-    }
-    // Slim LLM failed — fall through to full LLM as last resort
-  }
-
-  // ─── Tier 3: full LLM classify ───
-  classifyStats.fullLLMCalls++;
-  const prompt = buildClassifyPrompt(item.title, item.contentSnippet || item.content || '', item.source, item.fullText);
-  const raw = await classifyWithHaiku(prompt);
+  // Path C: LLM call
+  assessStats.llmCalls++;
+  const hasFullText = !!item.fullText;
+  const articleText = hasFullText
+    ? item.fullText!.slice(0, ARTICLE_TEXT_LIMIT_SONNET)
+    : (item.contentSnippet || item.content || 'Full text not available — analyze based on headline and source.');
+  const { system, user } = buildAssessPrompt(
+    item.title, item.source, articleText, item.pubDate, hasFullText, categoryHint
+  );
+  const raw = await analyzeWithSonnet(system, user, 'assess');
   if (!raw) return null;
-  const parsed = parseClaudeJSON<Classification>(raw);
-  if (!parsed) { console.error('Failed to parse classification:', raw.slice(0, 200)); return null; }
-  if (!validCategories.includes(parsed.category)) parsed.category = 'world';
 
+  const parsed = parseClaudeJSON<AssessmentResult>(raw);
+  if (!parsed) { console.error('Failed to parse assessment:', raw.slice(0, 200)); return null; }
+
+  if (!validCategories.includes(parsed.category)) parsed.category = 'world';
+  // Recompute manipulation_index from breakdown sub-scores (don't trust model arithmetic)
+  if (parsed.manipulation_breakdown) {
+    const b = parsed.manipulation_breakdown;
+    parsed.manipulation_index = (b.emotional_manipulation?.score ?? 0) +
+      (b.source_transparency?.score ?? 0) + (b.framing_bias?.score ?? 0) +
+      (b.selective_omission?.score ?? 0) + (b.headline_accuracy?.score ?? 0);
+  }
+  parsed.priority = heuristicPriority(item);
+  parsed.has_full_text = hasFullText;
+
+  const analysisJson = JSON.stringify(parsed);
   if (embedding) {
     upsertStory({
       slug, headline: item.title, source: item.source, publishedAt: item.pubDate,
       category: parsed.category, biasTag: parsed.bias_tag,
       manipulationIndex: parsed.manipulation_index, priority: parsed.priority,
-      quickTake: parsed.quick_take, embedding,
+      quickTake: parsed.quick_take, embedding, analysisJson,
     });
   }
   return parsed;
 }
 
-async function analyzeStory(item: FeedItem, classification: Classification): Promise<AnalysisResult | null> {
-  const hasFullText = !!item.fullText;
-  const articleText = hasFullText
-    ? item.fullText!.slice(0, ARTICLE_TEXT_LIMIT_SONNET)
-    : (item.contentSnippet || item.content || 'Full text not available — analyze based on headline and source.');
-  const { system, user } = buildAnalysisPrompt(
-    item.title, item.source, articleText, item.pubDate, hasFullText
-  );
-  const raw = await analyzeWithSonnet(system, user, 'story-analysis');
-  if (!raw) return null;
-  const parsed = parseClaudeJSON<AnalysisResult>(raw);
-  if (!parsed) { console.error('Failed to parse analysis:', raw.slice(0, 200)); return null; }
-  return parsed;
-}
-
-function summarize(item: FeedItem, classification: Classification, analysis: AnalysisResult | null): string {
-  const quickTake = analysis?.quick_take || classification.quick_take;
-  if (quickTake) return quickTake.slice(0, 500);
-  const snippet = item.contentSnippet || item.content || '';
-  const headline = item.title.toLowerCase().replace(/[^a-z0-9]/g, '');
-  const snipNorm = snippet.toLowerCase().replace(/[^a-z0-9]/g, '');
-  if (snipNorm.startsWith(headline)) return '';
-  return snippet.slice(0, 500);
-}
-
-function feedItemToStory(item: FeedItem, classification: Classification, analysis: AnalysisResult | null, index: number, cluster?: SourceCluster): Story {
-  const deepDive: DeepDive = analysis
-    ? {
-        mainstream: coerceToString(analysis.mainstream_frame),
-        realStory: coerceToString(analysis.real_story),
-        leftSpin: coerceToString(analysis.left_spin),
-        rightSpin: coerceToString(analysis.right_spin),
-        whosBenefiting: coerceToString(analysis.who_benefits),
-        whatsHidden: coerceToString(analysis.whats_hidden),
-      }
-    : { mainstream: 'Full analysis not yet generated for this story.', realStory: 'Deep analysis pending.', leftSpin: 'Deep analysis pending.', rightSpin: 'Deep analysis pending.', whosBenefiting: 'Deep analysis pending.', whatsHidden: 'Deep analysis pending.' };
-
+function feedItemToStory(item: FeedItem, assessment: AssessmentResult, index: number, cluster?: SourceCluster): Story {
   const story: Story = {
-    id: index + 1, slug: slugify(item.title), category: classification.category,
+    id: index + 1, slug: slugify(item.title), category: assessment.category,
     featured: false, source: item.source.toUpperCase(), sourceUrl: item.link,
     time: relativeTime(item.pubDate), headline: item.title,
-    summary: summarize(item, classification, analysis),
-    biasTag: mapBiasTag(classification.bias_tag),
-    manipulationScore: analysis?.manipulation_index ?? classification.manipulation_index,
-    manipulationBreakdown: analysis?.manipulation_breakdown,
-    hasFullText: analysis?.has_full_text ?? !!item.fullText,
-    realAnalysis: analysis?.quick_take ?? classification.quick_take,
-    deepDive,
+    summary: (assessment.quick_take || '').slice(0, 500),
+    biasTag: mapBiasTag(assessment.bias_tag || 'CENTER-ESTABLISHMENT'),
+    manipulationScore: assessment.manipulation_index,
+    manipulationBreakdown: assessment.manipulation_breakdown,
+    hasFullText: assessment.has_full_text,
+    realAnalysis: assessment.quick_take,
+    deepDive: {
+      mainstream: coerceToString(assessment.mainstream_frame),
+      realStory: coerceToString(assessment.real_story),
+      leftSpin: coerceToString(assessment.left_spin),
+      rightSpin: coerceToString(assessment.right_spin),
+      whosBenefiting: coerceToString(assessment.who_benefits),
+      whatsHidden: coerceToString(assessment.whats_hidden),
+    },
   };
 
   if (cluster && cluster.coverage.length > 0) {
@@ -1519,156 +1406,41 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
 
   // Step 3: Select and optionally fetch full article text
   stepStart = Date.now();
-  const toClassify = selectForClassification(unique, CLASSIFY_COUNT, 25);
-  const mainUsedLinks = new Set(toClassify.map(item => item.link));
+  const toAssess = selectForClassification(unique, ASSESS_COUNT, 25);
   if (ENABLE_ARTICLE_FETCH) {
-    console.log(`Step 3: Fetching full article text for ${toClassify.length} stories...`);
-    const { fetched: articlesFetched, failed: articlesFailed } = await fetchArticleTexts(toClassify);
+    console.log(`Step 3: Fetching full article text for ${toAssess.length} stories...`);
+    const { fetched: articlesFetched, failed: articlesFailed } = await fetchArticleTexts(toAssess);
     stats.articlesFetched = articlesFetched;
     stats.articlesFailed = articlesFailed;
-    console.log(`  Fetched ${articlesFetched}/${toClassify.length} articles (${articlesFailed} failed)`);
+    console.log(`  Fetched ${articlesFetched}/${toAssess.length} articles (${articlesFailed} failed)`);
   } else {
     console.log('Step 3: Article fetching disabled (ENABLE_ARTICLE_FETCH=false)');
   }
   stepTime('Step 3', stepStart);
 
-  // Step 4: Classify with lightweight model (with local embedding cache)
+  // Step 4: Assess all stories (unified classify + analyze in single LLM call)
   stepStart = Date.now();
-  resetClassifyStats();
-  console.log(`Step 4: Classifying ${toClassify.length} stories with ${CLASSIFY_MODEL} (cache threshold ${process.env.CACHE_HIT_THRESHOLD ?? 0.92})...`);
-  const classificationResults = await batchProcess(toClassify, classifyStory, CLASSIFY_BATCH_SIZE);
+  resetAssessStats();
+  console.log(`Step 4: Assessing ${toAssess.length} stories with ${ANALYZE_MODEL} (batch ${ASSESS_BATCH_SIZE}, cache threshold ${process.env.CACHE_HIT_THRESHOLD ?? 0.92})...`);
+  const assessResults = await batchProcess(toAssess, assessStory, ASSESS_BATCH_SIZE);
 
-  const classified: { item: FeedItem; classification: Classification }[] = [];
-  for (let i = 0; i < classificationResults.length; i++) {
-    if (classificationResults[i]) classified.push({ item: toClassify[i], classification: classificationResults[i]! });
+  const assessed: AssessedEntry[] = [];
+  for (let i = 0; i < assessResults.length; i++) {
+    if (assessResults[i]) assessed.push({ item: toAssess[i], assessment: assessResults[i]! });
   }
 
-  const sorted = categoryBalancedSort(classified);
-  stats.classified = sorted.length;
-  console.log(`  Classified ${sorted.length} stories  (cache: ${classifyStats.cacheHits}, slim-LLM: ${classifyStats.slimLLMCalls}, full-LLM: ${classifyStats.fullLLMCalls}, embed-failures: ${classifyStats.embedFailures})`);
-  stats.cacheHits = classifyStats.cacheHits;
-  stats.slimLLMCalls = classifyStats.slimLLMCalls;
-  stats.fullLLMCalls = classifyStats.fullLLMCalls;
-  stats.embedFailures = classifyStats.embedFailures;
+  const sorted = categoryBalancedSort(assessed);
+  stats.assessed = sorted.length;
+  console.log(`  Assessed ${sorted.length} stories  (cache: ${assessStats.cacheHits}, legacy-upgrades: ${assessStats.legacyUpgrades}, LLM: ${assessStats.llmCalls}, embed-failures: ${assessStats.embedFailures})`);
+  stats.cacheHits = assessStats.cacheHits;
+  stats.llmCalls = assessStats.llmCalls;
+  stats.embedFailures = assessStats.embedFailures;
   stepTime('Step 4', stepStart);
 
-  // Step 5: Deep-analyze with heavier model (parallel category streams)
+  // Step 5: Build Story objects + tag bonus categories
   stepStart = Date.now();
-  const toAnalyze = sorted.slice(0, DEEP_ANALYZE_COUNT);
-  const categoryGroups = groupByCategory(toAnalyze);
-  const categoryCount = categoryGroups.size;
-  console.log(`Step 5: Deep-analyzing ${toAnalyze.length} stories with ${ANALYZE_MODEL} (${categoryCount} parallel streams)...`);
-
-  const analyzeStart = Date.now();
-  const categoryResults = await Promise.all(
-    Array.from(categoryGroups.entries()).map(async ([category, items]) => {
-      const catStart = Date.now();
-      console.log(`  [${category}] Analyzing ${items.length} stories...`);
-      const results = await batchProcess(items, (c) => analyzeStory(c.item, c.classification), ANALYZE_BATCH_SIZE);
-      const catDuration = ((Date.now() - catStart) / 1000).toFixed(1);
-      const succeeded = results.filter(Boolean).length;
-      console.log(`  [${category}] Done — ${succeeded}/${items.length} in ${catDuration}s`);
-      return { items, results };
-    })
-  );
-  const analyzeDuration = ((Date.now() - analyzeStart) / 1000).toFixed(1);
-
-  // Reassemble in the original sorted order
-  const analysisMap = new Map<number, AnalysisResult>();
-  for (const { items, results } of categoryResults) {
-    for (let i = 0; i < results.length; i++) {
-      if (results[i]) {
-        const originalIdx = toAnalyze.indexOf(items[i]);
-        analysisMap.set(originalIdx, results[i]!);
-      }
-    }
-  }
-  stats.analyzed = analysisMap.size;
-  console.log(`  Analysis complete: ${analysisMap.size} stories in ${analyzeDuration}s (wall clock)`);
-  stepTime('Step 5', stepStart);
-
-  // Step 5b: Bonus category pass (extra finance/science content)
-  stepStart = Date.now();
-  console.log('Step 5b: Bonus category pass for finance/science...');
-  const bonusStories: Story[] = [];
-  const bonusManifests: Record<string, string[]> = {};
-
-  // Build trigram vectors for main pipeline stories to dedup bonus candidates against
-  const mainTrigrams = toClassify.map(item => {
-    const vec = buildTrigrams(item.title.toLowerCase().trim());
-    return { vec, mag: trigramMagnitude(vec) };
-  });
-
-  for (const bonusCat of BONUS_CATEGORIES) {
-    // Collect leftover items hinted for this category that weren't in the main pipeline
-    // Filter by both link URL AND title similarity against main pipeline stories
-    const leftovers = unique
-      .filter(item => {
-        if (item.hintCategory !== bonusCat) return false;
-        if (mainUsedLinks.has(item.link)) return false;
-        // Check title similarity against all main pipeline stories (hybrid check)
-        const titleLow = item.title.toLowerCase().trim();
-        const vec = buildTrigrams(titleLow);
-        const mag = trigramMagnitude(vec);
-        for (let mi = 0; mi < mainTrigrams.length; mi++) {
-          const sim = trigramCosineSim(vec, mag, mainTrigrams[mi].vec, mainTrigrams[mi].mag);
-          if (sim >= DEDUP_TRIGRAM_SOFT && isDuplicatePair(sim, titleLow, toClassify[mi].title)) return false;
-        }
-        return true;
-      })
-      .sort((a, b) => new Date(b.pubDate).getTime() - new Date(a.pubDate).getTime())
-      .slice(0, BONUS_PER_CATEGORY);
-
-    if (leftovers.length === 0) {
-      console.log(`  [${bonusCat}] No leftover candidates`);
-      bonusManifests[bonusCat] = [];
-      continue;
-    }
-    console.log(`  [${bonusCat}] Classifying ${leftovers.length} bonus candidates...`);
-
-    // Classify bonus candidates
-    const bonusClassResults = await batchProcess(leftovers, classifyStory, CLASSIFY_BATCH_SIZE);
-    const bonusClassified: { item: FeedItem; classification: Classification }[] = [];
-    for (let i = 0; i < bonusClassResults.length; i++) {
-      // Only keep items the classifier confirms belong to this category
-      if (bonusClassResults[i] && bonusClassResults[i]!.category === bonusCat) {
-        bonusClassified.push({ item: leftovers[i], classification: bonusClassResults[i]! });
-      }
-    }
-    console.log(`  [${bonusCat}] ${bonusClassified.length}/${leftovers.length} confirmed as ${bonusCat}`);
-
-    if (bonusClassified.length === 0) {
-      bonusManifests[bonusCat] = [];
-      continue;
-    }
-
-    // Analyze
-    console.log(`  [${bonusCat}] Analyzing ${bonusClassified.length} bonus stories with ${ANALYZE_MODEL}...`);
-    const bonusAnalysisResults = await batchProcess(bonusClassified, (c) => analyzeStory(c.item, c.classification), ANALYZE_BATCH_SIZE);
-
-    // Build Story objects
-    const baseIndex = sorted.length + bonusStories.length;
-    for (let i = 0; i < bonusClassified.length; i++) {
-      const story = feedItemToStory(
-        bonusClassified[i].item, bonusClassified[i].classification,
-        bonusAnalysisResults[i] ?? null, baseIndex + i,
-        clustersByLink.get(bonusClassified[i].item.link)
-      );
-      story.featured = false;
-      story.bonus = true;
-      bonusStories.push(story);
-    }
-    bonusManifests[bonusCat] = bonusStories
-      .filter(s => s.category === bonusCat)
-      .map(s => s.slug);
-    console.log(`  [${bonusCat}] ${bonusManifests[bonusCat].length} bonus stories ready`);
-  }
-  stats.bonusStories = bonusStories.length;
-  stepTime('Step 5b', stepStart);
-
-  // Step 6: Build Story objects (with source network from dedup clusters)
-  console.log(`Step 6: Building ${sorted.length} Story objects with source-network metadata...`);
-  const stories: Story[] = sorted.map((c, i) => feedItemToStory(c.item, c.classification, analysisMap.get(i) ?? null, i, clustersByLink.get(c.item.link)));
+  console.log(`Step 5: Building ${sorted.length} Story objects with source-network metadata...`);
+  const stories: Story[] = sorted.map((c, i) => feedItemToStory(c.item, c.assessment, i, clustersByLink.get(c.item.link)));
   const featuredPerCat = new Map<string, number>();
   for (const story of stories) {
     const count = featuredPerCat.get(story.category) || 0;
@@ -1677,9 +1449,28 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
   const networkedCount = stories.filter(s => s.sourceNetwork).length;
   console.log(`  ${networkedCount}/${stories.length} stories have multi-source network data`);
 
-  // Step 7: Sidebar data
+  // Tag bonus stories from the assessed pool (no separate LLM pass needed)
+  const bonusStories: Story[] = [];
+  const bonusManifests: Record<string, string[]> = {};
+  const mainSlugs = new Set(stories.map(s => s.slug));
+  for (const bonusCat of BONUS_CATEGORIES) {
+    const extras = assessed
+      .filter(a => a.assessment.category === bonusCat && !mainSlugs.has(slugify(a.item.title)))
+      .slice(0, BONUS_PER_CATEGORY);
+    for (const extra of extras) {
+      const story = feedItemToStory(extra.item, extra.assessment, stories.length + bonusStories.length, clustersByLink.get(extra.item.link));
+      story.bonus = true;
+      bonusStories.push(story);
+    }
+    bonusManifests[bonusCat] = bonusStories.filter(s => s.category === bonusCat).map(s => s.slug);
+    if (extras.length > 0) console.log(`  [${bonusCat}] ${bonusManifests[bonusCat].length} bonus stories from assessed pool`);
+  }
+  stats.bonusStories = bonusStories.length;
+  stepTime('Step 5', stepStart);
+
+  // Step 6: Sidebar data
   stepStart = Date.now();
-  console.log('Step 7: Generating sidebar data...');
+  console.log('Step 6: Generating sidebar data...');
   const storyBySlug = new Map(stories.map(s => [s.slug, s]));
   function resolveSlugs(slugs: string[]): SourceArticle[] {
     return slugs.map(sl => storyBySlug.get(sl)).filter(Boolean)
@@ -1802,11 +1593,11 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
   stats.tickerItems = tickerItems.length;
   stats.suppressedSearches = suppressedSearches.length;
   console.log(`  Sidebar: ${obfuscations.length} obfuscations, ${narratives.length} narratives, ${tickerItems.length} ticker, ${suppressedSearches.length} suppressed`);
-  stepTime('Step 7', stepStart);
+  stepTime('Step 6', stepStart);
 
   // Step 7b: Precompute narrative analyses (parallel)
   stepStart = Date.now();
-  console.log('Step 7b: Precomputing narrative analyses...');
+  console.log('Step 6b: Precomputing narrative analyses...');
   const narrativeAnalyses: NarrativeAnalysis[] = [];
   if (narratives.length > 0) {
     const naStart = Date.now();
@@ -1862,11 +1653,11 @@ Respond in JSON:
     console.log(`  Precomputed ${narrativeAnalyses.length}/${narratives.length} narrative analyses in ${naDuration}s`);
   }
   stats.narrativeAnalyses = narrativeAnalyses.length;
-  stepTime('Step 7b', stepStart);
+  stepTime('Step 6b', stepStart);
 
   // Step 7c: Precompute search analyses (RSS + analysis model per query)
   stepStart = Date.now();
-  console.log('Step 7c: Precomputing search analyses...');
+  console.log('Step 6c: Precomputing search analyses...');
   const searchAnalyses: SuppressedSearchEntry[] = [];
   if (suppressedSearches.length > 0) {
     const saStart = Date.now();
@@ -1949,16 +1740,16 @@ Respond in JSON:
     console.log(`  Precomputed ${succeeded}/${suppressedSearches.length} search analyses in ${saDuration}s`);
   }
   stats.searchAnalyses = searchAnalyses.filter(e => e.analysis).length;
-  stepTime('Step 7c', stepStart);
+  stepTime('Step 6c', stepStart);
 
   // Step 8: Store each story individually in DynamoDB (main + bonus)
   stepStart = Date.now();
   const allStoriesToStore = [...stories, ...bonusStories];
   if (DRY_RUN) {
-    console.log(`Step 8: DRY_RUN — skipping DynamoDB store (${allStoriesToStore.length} stories would be written)`);
+    console.log(`Step 7: DRY_RUN — skipping DynamoDB store (${allStoriesToStore.length} stories would be written)`);
     stats.stored = 0;
   } else {
-    console.log(`Step 8: Storing ${allStoriesToStore.length} stories to DynamoDB (${stories.length} main + ${bonusStories.length} bonus)...`);
+    console.log(`Step 7: Storing ${allStoriesToStore.length} stories to DynamoDB (${stories.length} main + ${bonusStories.length} bonus)...`);
     // Build per-story metadata: publishedAt is the *article's* publication date,
     // not the pipeline run time (required for age-based purge semantics).
     // Falls back to now if a story has no recoverable pubDate.
@@ -1981,13 +1772,13 @@ Respond in JSON:
     stats.stored = stored;
     console.log(`  Stored ${stored}/${stories.length} stories${failed ? ` (${failed} failed)` : ''}`);
   }
-  stepTime('Step 8', stepStart);
+  stepTime('Step 7', stepStart);
 
   // Step 9: Cache manifest + sidebar + precomputed analyses
   stepStart = Date.now();
   if (DRY_RUN) {
-    console.log('Step 9: DRY_RUN — skipping cache writes');
-    stepTime('Step 9', stepStart);
+    console.log('Step 8: DRY_RUN — skipping cache writes');
+    stepTime('Step 8', stepStart);
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(1);
     stats.duration = `${duration}s`;
@@ -1997,7 +1788,7 @@ Respond in JSON:
     printTokenReport();
     return { success: true, ...stats };
   }
-  console.log('Step 9: Caching manifest + sidebar + analyses...');
+  console.log('Step 8: Caching manifest + sidebar + analyses...');
   const manifest = stories.map((s) => s.slug);
 
   // Drop sidebar items whose detail-page analyses didn't make it through
@@ -2058,7 +1849,7 @@ Respond in JSON:
   });
   const cacheFailed = cacheResults.filter(r => r.status === 'rejected').length;
   console.log(`  Cached ${cacheResults.length - cacheFailed}/${cacheResults.length} entries${cacheFailed ? ` (${cacheFailed} failed)` : ''}`);
-  stepTime('Step 9', stepStart);
+  stepTime('Step 8', stepStart);
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
   stats.duration = `${duration}s`;

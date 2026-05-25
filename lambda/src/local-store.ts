@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import OpenAI from 'openai';
+import { track } from './telemetry.js';
 
 const DB_PATH = process.env.LOCAL_DB_PATH || './data/newsreal.db';
 const EMBEDDING_MODEL = process.env.LOCAL_EMBEDDING_MODEL || 'text-embedding-nomic-embed-text-v1.5';
@@ -75,11 +76,13 @@ export async function embed(text: string): Promise<Float32Array | null> {
 export async function embedBatch(texts: string[]): Promise<(Float32Array | null)[]> {
   if (texts.length === 0) return [];
   try {
+    const start = Date.now();
     const response = await getEmbedClient().embeddings.create({
       model: EMBEDDING_MODEL,
       input: texts,
       encoding_format: 'float',
     });
+    track(EMBEDDING_MODEL, 'embedding', response.usage?.prompt_tokens ?? 0, 0, Date.now() - start);
     return texts.map((_, i) => {
       const vec = response.data[i]?.embedding;
       return vec ? new Float32Array(vec as number[]) : null;

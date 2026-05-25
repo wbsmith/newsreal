@@ -7,6 +7,7 @@ import { Readability } from '@mozilla/readability';
 import { parseHTML } from 'linkedom';
 import { embed, findNearestNeighbor, upsertStory, buildCategoryCentroids, matchByCentroid, type CentroidMap } from './local-store.js';
 import { CATEGORY_PROTOTYPES } from './category-prototypes.js';
+import { track, printReport as printTokenReport } from './telemetry.js';
 
 // ─── Types ───
 
@@ -160,6 +161,7 @@ const ANALYZE_MAX_TOKENS = Number(process.env.ANALYZE_MAX_TOKENS ?? 8192);
 // manual pipeline runs. Each run overwrites these keys, so stale data is
 // naturally bounded by user cadence rather than DDB-TTL ejection.
 const CACHE_TTL = 72 * 60 * 60;
+const DRY_RUN = process.env.DRY_RUN === 'true';
 const ENABLE_ARTICLE_FETCH = false; // Feature flag: fetch full article text via Readability
 const ARTICLE_FETCH_BATCH_SIZE = 20;
 const ARTICLE_FETCH_TIMEOUT = 10000; // 10s per article
@@ -582,11 +584,13 @@ async function fetchArticleTexts(items: FeedItem[]): Promise<{ fetched: number; 
 
 async function classifyWithHaiku(prompt: string): Promise<string | null> {
   try {
+    const start = Date.now();
     const response = await getLLM().chat.completions.create({
       model: CLASSIFY_MODEL,
       max_tokens: CLASSIFY_MAX_TOKENS,
       messages: [{ role: 'user', content: prompt }],
     });
+    track(CLASSIFY_MODEL, 'classify', response.usage?.prompt_tokens ?? 0, response.usage?.completion_tokens ?? 0, Date.now() - start);
     return response.choices[0]?.message?.content ?? null;
   } catch (err) {
     console.error('Classify LLM error:', err instanceof Error ? err.message : err);
@@ -594,8 +598,9 @@ async function classifyWithHaiku(prompt: string): Promise<string | null> {
   }
 }
 
-async function analyzeWithSonnet(systemPrompt: string, userPrompt: string): Promise<string | null> {
+async function analyzeWithSonnet(systemPrompt: string, userPrompt: string, label = 'analyze'): Promise<string | null> {
   try {
+    const start = Date.now();
     const response = await getLLM().chat.completions.create({
       model: ANALYZE_MODEL,
       max_tokens: ANALYZE_MAX_TOKENS,
@@ -604,6 +609,7 @@ async function analyzeWithSonnet(systemPrompt: string, userPrompt: string): Prom
         { role: 'user', content: userPrompt },
       ],
     });
+    track(ANALYZE_MODEL, label, response.usage?.prompt_tokens ?? 0, response.usage?.completion_tokens ?? 0, Date.now() - start);
     return response.choices[0]?.message?.content ?? null;
   } catch (err) {
     console.error('Analyze LLM error:', err instanceof Error ? err.message : err);
@@ -831,10 +837,11 @@ export function selectForClassification(items: FeedItem[], total: number, minPer
   const usedLinks = new Set<string>();
 
   // Phase 1: weighted sample minPerCategory from each category bucket
+  const cappedMin = Math.min(minPerCategory, Math.floor(total / ALL_CATEGORIES.length));
   const selected: FeedItem[] = [];
   for (const cat of ALL_CATEGORIES) {
     const bucket = categoryBuckets.get(cat) || [];
-    const sampled = weightedSample(bucket, minPerCategory, usedLinks);
+    const sampled = weightedSample(bucket, cappedMin, usedLinks);
     selected.push(...sampled);
   }
 
@@ -1370,7 +1377,7 @@ async function analyzeStory(item: FeedItem, classification: Classification): Pro
   const { system, user } = buildAnalysisPrompt(
     item.title, item.source, articleText, item.pubDate, hasFullText
   );
-  const raw = await analyzeWithSonnet(system, user);
+  const raw = await analyzeWithSonnet(system, user, 'story-analysis');
   if (!raw) return null;
   const parsed = parseClaudeJSON<AnalysisResult>(raw);
   if (!parsed) { console.error('Failed to parse analysis:', raw.slice(0, 200)); return null; }
@@ -1675,8 +1682,8 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
   const narrativePrompt = buildNarrativePrompt(storyListForPrompt, clusterEvidence || undefined);
 
   const [obfuscationsRaw, narrativesRaw] = await Promise.all([
-    analyzeWithSonnet(obfuscationPrompt.system, obfuscationPrompt.user),
-    analyzeWithSonnet(narrativePrompt.system, narrativePrompt.user),
+    analyzeWithSonnet(obfuscationPrompt.system, obfuscationPrompt.user, 'sidebar-obfuscation'),
+    analyzeWithSonnet(narrativePrompt.system, narrativePrompt.user, 'sidebar-narrative'),
   ]);
 
   const obfuscations: Obfuscation[] = (() => {
@@ -1742,8 +1749,8 @@ export async function runFullPipeline(): Promise<Record<string, unknown>> {
   const suppressedPrompt = buildSuppressedSearchesPrompt(storySummaries.join('; '), obfuscationSummaries.join('; '));
 
   const [tickerRaw, suppressedRaw] = await Promise.all([
-    analyzeWithSonnet(tickerPrompt.system, tickerPrompt.user),
-    analyzeWithSonnet(suppressedPrompt.system, suppressedPrompt.user),
+    analyzeWithSonnet(tickerPrompt.system, tickerPrompt.user, 'sidebar-ticker'),
+    analyzeWithSonnet(suppressedPrompt.system, suppressedPrompt.user, 'sidebar-suppressed'),
   ]);
 
   const tickerItems: TickerItem[] = (() => {
@@ -1807,7 +1814,7 @@ Respond in JSON:
   "suppressed_alternative": "<What alternative framing is being suppressed? What questions aren't being asked? What connections aren't being drawn? What would the story look like if covered without this narrative frame?>"
 }`;
 
-      const raw = await analyzeWithSonnet(naSystem, naUser);
+      const raw = await analyzeWithSonnet(naSystem, naUser, 'narrative-deepdive');
       if (!raw) return null;
       const parsed = parseClaudeJSON<{ narrative_origin: string; coordination_evidence: string; who_benefits: string; suppressed_alternative: string }>(raw);
       if (!parsed) return null;
@@ -1889,7 +1896,7 @@ Respond in JSON:
   "why_its_suppressed": "<Why would this search query be something most people aren't searching for? Who benefits from public ignorance on this topic? What institutional incentives exist to keep this out of mainstream discourse? Be bold.>"
 }`;
 
-        const raw = await analyzeWithSonnet(saSystem, saUser);
+        const raw = await analyzeWithSonnet(saSystem, saUser, 'search-deepdive');
         if (!raw) return { query, analysis: null } as SuppressedSearchEntry;
         const parsed = parseClaudeJSON<{
           media_pattern: string; whats_revealed: string; whats_missing: string;
@@ -1925,32 +1932,49 @@ Respond in JSON:
   // Step 8: Store each story individually in DynamoDB (main + bonus)
   stepStart = Date.now();
   const allStoriesToStore = [...stories, ...bonusStories];
-  console.log(`Step 8: Storing ${allStoriesToStore.length} stories to DynamoDB (${stories.length} main + ${bonusStories.length} bonus)...`);
-  // Build per-story metadata: publishedAt is the *article's* publication date,
-  // not the pipeline run time (required for age-based purge semantics).
-  // Falls back to now if a story has no recoverable pubDate.
-  // `unique` carries every FeedItem that survived dedup, which covers both the
-  // main classified set and bonus-pass candidates.
-  const storyToFeedDate = new Map<string, string>();
-  for (const item of unique) storyToFeedDate.set(slugify(item.title), item.pubDate);
-  const nowIso = new Date().toISOString();
-  const storeResults = await Promise.allSettled(
-    allStoriesToStore.map((story) => {
-      const rawPubDate = storyToFeedDate.get(story.slug);
-      let publishedAt = rawPubDate;
-      if (!publishedAt || isNaN(new Date(publishedAt).getTime())) publishedAt = nowIso;
-      else publishedAt = new Date(publishedAt).toISOString(); // normalize to ISO
-      return putStory({ ...story, id: story.slug, publishedAt, storedAt: nowIso });
-    })
-  );
-  const stored = storeResults.filter((r) => r.status === 'fulfilled').length;
-  const failed = storeResults.filter((r) => r.status === 'rejected').length;
-  stats.stored = stored;
-  console.log(`  Stored ${stored}/${stories.length} stories${failed ? ` (${failed} failed)` : ''}`);
+  if (DRY_RUN) {
+    console.log(`Step 8: DRY_RUN — skipping DynamoDB store (${allStoriesToStore.length} stories would be written)`);
+    stats.stored = 0;
+  } else {
+    console.log(`Step 8: Storing ${allStoriesToStore.length} stories to DynamoDB (${stories.length} main + ${bonusStories.length} bonus)...`);
+    // Build per-story metadata: publishedAt is the *article's* publication date,
+    // not the pipeline run time (required for age-based purge semantics).
+    // Falls back to now if a story has no recoverable pubDate.
+    // `unique` carries every FeedItem that survived dedup, which covers both the
+    // main classified set and bonus-pass candidates.
+    const storyToFeedDate = new Map<string, string>();
+    for (const item of unique) storyToFeedDate.set(slugify(item.title), item.pubDate);
+    const nowIso = new Date().toISOString();
+    const storeResults = await Promise.allSettled(
+      allStoriesToStore.map((story) => {
+        const rawPubDate = storyToFeedDate.get(story.slug);
+        let publishedAt = rawPubDate;
+        if (!publishedAt || isNaN(new Date(publishedAt).getTime())) publishedAt = nowIso;
+        else publishedAt = new Date(publishedAt).toISOString(); // normalize to ISO
+        return putStory({ ...story, id: story.slug, publishedAt, storedAt: nowIso });
+      })
+    );
+    const stored = storeResults.filter((r) => r.status === 'fulfilled').length;
+    const failed = storeResults.filter((r) => r.status === 'rejected').length;
+    stats.stored = stored;
+    console.log(`  Stored ${stored}/${stories.length} stories${failed ? ` (${failed} failed)` : ''}`);
+  }
   stepTime('Step 8', stepStart);
 
   // Step 9: Cache manifest + sidebar + precomputed analyses
   stepStart = Date.now();
+  if (DRY_RUN) {
+    console.log('Step 9: DRY_RUN — skipping cache writes');
+    stepTime('Step 9', stepStart);
+
+    const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+    stats.duration = `${duration}s`;
+    stats.timestamp = new Date().toISOString();
+    stats.dryRun = true;
+    console.log(`Pipeline complete (dry run) in ${duration}s`);
+    printTokenReport();
+    return { success: true, ...stats };
+  }
   console.log('Step 9: Caching manifest + sidebar + analyses...');
   const manifest = stories.map((s) => s.slug);
 
@@ -2018,6 +2042,7 @@ Respond in JSON:
   stats.duration = `${duration}s`;
   stats.timestamp = new Date().toISOString();
   console.log(`Pipeline complete in ${duration}s`);
+  printTokenReport();
 
   // Store full stats for admin dashboard
   try {

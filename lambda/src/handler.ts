@@ -750,15 +750,22 @@ function mapBiasTag(tag: string): StoryBiasTag {
   return { label: normalized, class: BIAS_CLASS_MAP[normalized] || 'center' };
 }
 
-async function batchProcess<T, R>(items: T[], fn: (item: T) => Promise<R>, batchSize: number): Promise<(R | null)[]> {
-  const results: (R | null)[] = [];
-  for (let i = 0; i < items.length; i += batchSize) {
-    const batch = items.slice(i, i + batchSize);
-    const batchResults = await Promise.allSettled(batch.map(fn));
-    for (const result of batchResults) {
-      results.push(result.status === 'fulfilled' ? result.value : null);
+async function batchProcess<T, R>(items: T[], fn: (item: T) => Promise<R>, concurrency: number): Promise<(R | null)[]> {
+  const results: (R | null)[] = new Array(items.length).fill(null);
+  let next = 0;
+
+  async function worker() {
+    while (next < items.length) {
+      const idx = next++;
+      try {
+        results[idx] = await fn(items[idx]);
+      } catch {
+        results[idx] = null;
+      }
     }
   }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
   return results;
 }
 

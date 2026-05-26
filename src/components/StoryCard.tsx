@@ -8,9 +8,20 @@ import ManipulationMeter from './ManipulationMeter';
 interface StoryCardProps {
   story: Story;
   tier?: 'hero' | 'featured' | 'compact';
+  votes?: { up: number; down: number };
+  userVote?: 'up' | 'down' | null;
+  onVote?: (slug: string, direction: 'up' | 'down') => void;
 }
 
-export default function StoryCard({ story, tier = 'featured' }: StoryCardProps) {
+export default function StoryCard({ story, tier = 'featured', votes, userVote, onVote }: StoryCardProps) {
+  const net = (votes?.up ?? 0) - (votes?.down ?? 0);
+
+  function handleVote(e: React.MouseEvent, direction: 'up' | 'down') {
+    e.preventDefault();
+    e.stopPropagation();
+    onVote?.(story.slug, direction);
+  }
+
   return (
     <Link
       href={`/story/${story.slug}`}
@@ -39,6 +50,13 @@ export default function StoryCard({ story, tier = 'featured' }: StoryCardProps) 
         {tier !== 'compact' && story.realAnalysis && (
           <div className="story-real">
             <p>{story.realAnalysis}</p>
+          </div>
+        )}
+        {onVote && (
+          <div className="story-votes">
+            <button className={`vote-btn vote-up ${userVote === 'up' ? 'active' : ''}`} onClick={(e) => handleVote(e, 'up')}>&#9650;</button>
+            <span className={`vote-count ${net > 0 ? 'positive' : net < 0 ? 'negative' : ''}`}>{net}</span>
+            <button className={`vote-btn vote-down ${userVote === 'down' ? 'active' : ''}`} onClick={(e) => handleVote(e, 'down')}>&#9660;</button>
           </div>
         )}
       </article>

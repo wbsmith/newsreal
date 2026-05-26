@@ -34,6 +34,10 @@ export default function Home() {
   // Analyze article modal (this one stays as state — it's a write action, not navigation)
   const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
 
+  // Vote state
+  const [votes, setVotes] = useState<Record<string, { up: number; down: number }>>({});
+  const [userVotes, setUserVotes] = useState<Record<string, 'up' | 'down'>>({});
+
   // Data state — empty until API responds
   const [stories, setStories] = useState<Story[]>([]);
   const [bonusStories, setBonusStories] = useState<Map<string, Story[]>>(new Map());
@@ -59,9 +63,12 @@ export default function Home() {
         if (data.ticker?.length > 0) setTickerItems(data.ticker);
         if (data.suppressedSearches?.length > 0) setSuppressedSearches(data.suppressedSearches);
       })
-      .catch(() => {
-        // API unavailable — sections will show empty state
-      });
+      .catch(() => {});
+
+    fetch('/api/vote')
+      .then((res) => res.json())
+      .then((data) => { if (data && typeof data === 'object') setVotes(data); })
+      .catch(() => {});
 
     const loadTimer = setTimeout(() => {
       setLoading(false);
@@ -101,6 +108,33 @@ export default function Home() {
       setSearchLoading(false);
     }
   }, [stories]);
+
+  const handleVote = useCallback(async (slug: string, direction: 'up' | 'down') => {
+    // Optimistic update
+    const prev = userVotes[slug];
+    const prevVotes = votes[slug] || { up: 0, down: 0 };
+    const next = { ...prevVotes };
+    if (prev === direction) {
+      next[direction]--;
+      setUserVotes((v) => { const n = { ...v }; delete n[slug]; return n; });
+    } else {
+      if (prev) next[prev]--;
+      next[direction]++;
+      setUserVotes((v) => ({ ...v, [slug]: direction }));
+    }
+    setVotes((v) => ({ ...v, [slug]: next }));
+
+    try {
+      const res = await fetch('/api/vote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug, direction }),
+      });
+      const data = await res.json();
+      setVotes((v) => ({ ...v, [slug]: { up: data.up, down: data.down } }));
+      setUserVotes((v) => data.userVote ? { ...v, [slug]: data.userVote } : (() => { const n = { ...v }; delete n[slug]; return n; })());
+    } catch {}
+  }, [votes, userVotes]);
 
   const handleSearchClear = useCallback(() => {
     setSearchQuery('');
@@ -145,8 +179,18 @@ export default function Home() {
       );
     }
 
-    return base;
-  }, [activeFilter, stories, bonusStories, searchQuery]);
+    const hasVotes = base.some(s => votes[s.slug]);
+    if (!hasVotes) return base;
+
+    return [...base].sort((a, b) => {
+      const va = votes[a.slug] || { up: 0, down: 0 };
+      const vb = votes[b.slug] || { up: 0, down: 0 };
+      const netA = va.up - va.down;
+      const netB = vb.up - vb.down;
+      if (netA !== netB) return netB - netA;
+      return 0; // preserve pipeline order as tiebreaker
+    });
+  }, [activeFilter, stories, bonusStories, searchQuery, votes]);
 
   if (loading) {
     return (
@@ -209,12 +253,12 @@ export default function Home() {
             ) : (
               <>
                 <div className="stories-grid stories-grid-hero">
-                  <StoryCard story={filteredStories[0]} tier="hero" />
+                  <StoryCard story={filteredStories[0]} tier="hero" votes={votes[filteredStories[0].slug]} userVote={userVotes[filteredStories[0].slug]} onVote={handleVote} />
                 </div>
                 {filteredStories.slice(1).filter(s => s.featured).length > 0 && (
                   <div className="stories-grid stories-grid-featured">
                     {filteredStories.slice(1).filter(s => s.featured).map((story) => (
-                      <StoryCard key={story.id} story={story} tier="featured" />
+                      <StoryCard key={story.id} story={story} tier="featured" votes={votes[story.slug]} userVote={userVotes[story.slug]} onVote={handleVote} />
                     ))}
                   </div>
                 )}
@@ -230,7 +274,7 @@ export default function Home() {
             <div className="stories-rest">
               <div className="stories-grid stories-grid-compact">
                 {filteredStories.filter(s => !s.featured).map((story) => (
-                  <StoryCard key={story.id} story={story} tier="compact" />
+                  <StoryCard key={story.id} story={story} tier="compact" votes={votes[story.slug]} userVote={userVotes[story.slug]} onVote={handleVote} />
                 ))}
               </div>
             </div>

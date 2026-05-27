@@ -5,7 +5,7 @@ import {
 
 let client: BedrockRuntimeClient | null = null;
 
-const MODEL_ID = process.env.BEDROCK_MODEL_ID || 'us.google.gemma-3-27b-it';
+const MODEL_ID = process.env.BEDROCK_MODEL_ID || 'google.gemma-3-27b-it';
 
 function getBedrockClient(): BedrockRuntimeClient | null {
   if (client) return client;

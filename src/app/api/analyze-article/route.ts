@@ -7,6 +7,7 @@ import { getCached, setCached } from '@/lib/cache';
 import { FeedItem } from '@/lib/ingestion/rss-parser';
 
 export const dynamic = 'force-dynamic';
+export const maxDuration = 30;
 
 const RATE_LIMIT = 25;
 const RATE_LIMIT_TTL = 86400; // 24 hours

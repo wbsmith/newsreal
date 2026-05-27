@@ -6,8 +6,9 @@ frontend:
         - npm ci
     build:
       commands:
-        - node -e "Object.entries(process.env).filter(([k])=>/^(ANTHROPIC_API_KEY|CRON_SECRET|NEWSREAL_|NEXT_PUBLIC_|ADMIN_)/.test(k)).forEach(([k,v])=>console.log(k+'=\"'+v+'\"'))" >> .env.production
+        - env | grep -E '^(BEDROCK_|UPSTASH_|DYNAMODB_|ANTHROPIC_|CRON_SECRET|NEWSREAL_|NEXT_PUBLIC_|ADMIN_)' >> .env.production
         - npm run build
+        - cp .env.production .next/.env.production
   artifacts:
     baseDirectory: .next
     files:

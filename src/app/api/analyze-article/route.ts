@@ -8,19 +8,23 @@ import { FeedItem } from '@/lib/ingestion/rss-parser';
 
 export const dynamic = 'force-dynamic';
 
-const RATE_LIMIT = 10;
+const RATE_LIMIT = 25;
 const RATE_LIMIT_TTL = 86400; // 24 hours
 
-async function checkRateLimit(ip: string): Promise<boolean> {
+function rateLimitKey(ip: string): string {
   const date = new Date().toISOString().slice(0, 10);
   const hash = createHash('sha256').update(ip).digest('hex').slice(0, 12);
-  const key = `ratelimit:analyze:${hash}:${date}`;
+  return `ratelimit:analyze:${hash}:${date}`;
+}
 
+async function checkRateLimit(key: string): Promise<boolean> {
   const count = await getCached<number>(key);
-  if (count !== null && count >= RATE_LIMIT) return false;
+  return count === null || count < RATE_LIMIT;
+}
 
+async function incrementRateLimit(key: string): Promise<void> {
+  const count = await getCached<number>(key);
   await setCached(key, (count ?? 0) + 1, RATE_LIMIT_TTL);
-  return true;
 }
 
 export async function POST(request: Request) {
@@ -28,10 +32,11 @@ export async function POST(request: Request) {
   const headersList = await headers();
   const ip = headersList.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
 
-  const allowed = await checkRateLimit(ip);
+  const rlKey = rateLimitKey(ip);
+  const allowed = await checkRateLimit(rlKey);
   if (!allowed) {
     return NextResponse.json(
-      { error: 'Rate limit exceeded. Maximum 10 analyses per day.' },
+      { error: 'Rate limit exceeded. Maximum 25 analyses per day.' },
       { status: 429 }
     );
   }
@@ -102,8 +107,9 @@ export async function POST(request: Request) {
 
     // Build Story object
     const story = feedItemToStory(feedItem, classification, analysis, 0);
-    // Override source URL for user submissions
     story.sourceUrl = articleUrl;
+
+    await incrementRateLimit(rlKey);
 
     return NextResponse.json({ story });
   } catch (err) {

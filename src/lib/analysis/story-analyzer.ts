@@ -1,5 +1,6 @@
 import { FeedItem } from '@/lib/ingestion/rss-parser';
-import { classifyWithHaiku, analyzeWithSonnet } from '@/lib/claude';
+import { classifyWithBedrock, analyzeWithBedrock } from '@/lib/bedrock';
+import { analyzeWithSonnet } from '@/lib/claude';
 import { slugify, relativeTime, mapBiasTag, parseClaudeJSON } from '@/lib/utils';
 import {
   Story,
@@ -75,7 +76,7 @@ interface SuppressedResult {
   suppressed_searches: string[];
 }
 
-// ─── Classification (Haiku — cheap) ───
+// ─── Classification (Bedrock) ───
 
 export async function classifyStory(item: FeedItem): Promise<Classification | null> {
   const prompt = buildQuickClassificationPrompt(
@@ -84,7 +85,7 @@ export async function classifyStory(item: FeedItem): Promise<Classification | nu
     item.source
   );
 
-  const raw = await classifyWithHaiku(prompt);
+  const raw = await classifyWithBedrock(prompt);
   if (!raw) return null;
 
   const parsed = parseClaudeJSON<Classification>(raw);
@@ -102,7 +103,7 @@ export async function classifyStory(item: FeedItem): Promise<Classification | nu
   return parsed;
 }
 
-// ─── Deep Analysis (Sonnet — expensive) ───
+// ─── Deep Analysis (Bedrock) ───
 
 export async function analyzeStory(
   item: FeedItem,
@@ -115,12 +116,12 @@ export async function analyzeStory(
     item.pubDate
   );
 
-  const raw = await analyzeWithSonnet(system, user);
+  const raw = await analyzeWithBedrock(system, user);
   if (!raw) return null;
 
   const parsed = parseClaudeJSON<AnalysisResult>(raw);
   if (!parsed) {
-    console.error('Failed to parse Sonnet analysis:', raw.slice(0, 200));
+    console.error('Failed to parse analysis:', raw.slice(0, 200));
     return null;
   }
 

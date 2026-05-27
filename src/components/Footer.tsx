@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 export default function Footer() {
   return (
     <footer className="site-footer">
@@ -9,10 +11,10 @@ export default function Footer() {
         replace it. Always verify with primary sources.
       </div>
       <div className="footer-links">
-        <a href="#">About Our Method</a>
-        <a href="#">How AI Speculation Works</a>
-        <a href="#">Bias Rating System</a>
-        <a href="#">Contact</a>
+        <Link href="/about">About</Link>
+        <Link href="/method">How AI Speculation Works</Link>
+        <Link href="/bias-ratings">Bias Rating System</Link>
+        <Link href="/contact">Contact</Link>
       </div>
     </footer>
   );

@@ -1,6 +1,5 @@
 import { FeedItem } from '@/lib/ingestion/rss-parser';
-import { classifyWithBedrock, analyzeWithBedrock } from '@/lib/bedrock';
-import { analyzeWithSonnet } from '@/lib/claude';
+import { classify, analyze } from '@/lib/llm';
 import { slugify, relativeTime, mapBiasTag, parseClaudeJSON } from '@/lib/utils';
 import {
   Story,
@@ -85,12 +84,12 @@ export async function classifyStory(item: FeedItem): Promise<Classification | nu
     item.source
   );
 
-  const raw = await classifyWithBedrock(prompt);
+  const raw = await classify(prompt);
   if (!raw) return null;
 
   const parsed = parseClaudeJSON<Classification>(raw);
   if (!parsed) {
-    console.error('Failed to parse Haiku classification:', raw.slice(0, 200));
+    console.error('Failed to parse classification:', raw.slice(0, 200));
     return null;
   }
 
@@ -116,7 +115,7 @@ export async function analyzeStory(
     item.pubDate
   );
 
-  const raw = await analyzeWithBedrock(system, user);
+  const raw = await analyze(system, user);
   if (!raw) return null;
 
   const parsed = parseClaudeJSON<AnalysisResult>(raw);
@@ -134,7 +133,7 @@ export async function generateObfuscationIndex(headlines: string[]): Promise<Obf
   const headlineText = headlines.map((h, i) => `${i + 1}. ${h}`).join('\n');
   const { system, user } = buildObfuscationPrompt(headlineText);
 
-  const raw = await analyzeWithSonnet(system, user);
+  const raw = await analyze(system, user);
   if (!raw) return [];
 
   const parsed = parseClaudeJSON<ObfuscationResult>(raw);
@@ -157,7 +156,7 @@ export async function generateNarratives(headlines: string[]): Promise<Narrative
   const headlineText = headlines.map((h, i) => `${i + 1}. ${h}`).join('\n');
   const { system, user } = buildNarrativeTrackerPrompt(headlineText);
 
-  const raw = await analyzeWithSonnet(system, user);
+  const raw = await analyze(system, user);
   if (!raw) return [];
 
   const parsed = parseClaudeJSON<NarrativeResult>(raw);
@@ -195,7 +194,7 @@ export async function generateTickerItems(
     narrativeSlugs
   );
 
-  const raw = await analyzeWithSonnet(system, user);
+  const raw = await analyze(system, user);
   if (!raw) return [];
 
   const parsed = parseClaudeJSON<TickerResult>(raw);
@@ -220,7 +219,7 @@ export async function generateSuppressedSearches(
     obfuscations.join('; ')
   );
 
-  const raw = await analyzeWithSonnet(system, user);
+  const raw = await analyze(system, user);
   if (!raw) return [];
 
   const parsed = parseClaudeJSON<SuppressedResult>(raw);

@@ -6,7 +6,7 @@ frontend:
         - npm ci
     build:
       commands:
-        - env | grep -E '^(BEDROCK_|UPSTASH_|DYNAMODB_|ANTHROPIC_|CRON_SECRET|NEWSREAL_|NEXT_PUBLIC_|ADMIN_)' >> .env.production
+        - env | grep -E '^(LLM_|BEDROCK_|UPSTASH_|DYNAMODB_|CRON_SECRET|NEWSREAL_|NEXT_PUBLIC_|ADMIN_)' >> .env.production
         - npm run build
         - cp .env.production .next/.env.production
   artifacts:

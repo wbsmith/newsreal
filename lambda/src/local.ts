@@ -16,6 +16,10 @@ async function main() {
   console.log('\n━━━ Result ━━━');
   console.log(JSON.stringify(result, null, 2));
   console.log(`\nTotal wall clock: ${totalSec}s`);
+
+  // Stray keep-alive sockets (RSS feeds, AWS SDK) can pin the event loop —
+  // exit explicitly once the pipeline has fully completed.
+  process.exit(0);
 }
 
 main().catch((err) => {

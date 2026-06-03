@@ -748,19 +748,25 @@ function mapBiasTag(tag: string): StoryBiasTag {
 async function batchProcess<T, R>(items: T[], fn: (item: T) => Promise<R>, concurrency: number): Promise<(R | null)[]> {
   const results: (R | null)[] = new Array(items.length).fill(null);
   let next = 0;
+  let errorCount = 0;
 
   async function worker() {
     while (next < items.length) {
       const idx = next++;
       try {
         results[idx] = await fn(items[idx]);
-      } catch {
+      } catch (err) {
+        // Log the first error in full so systemic failures aren't silent
+        if (errorCount++ === 0) {
+          console.error('  batchProcess: first item error:', err instanceof Error ? err.message : err);
+        }
         results[idx] = null;
       }
     }
   }
 
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+  if (errorCount > 0) console.error(`  batchProcess: ${errorCount}/${items.length} items threw`);
   return results;
 }
 

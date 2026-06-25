@@ -53,6 +53,7 @@ interface AnalysisResult {
   bias_tag: string;
   quick_take: string;
   mainstream_frame: string;
+  deep_analysis: string;
   real_story: string;
   left_spin: string;
   right_spin: string;
@@ -70,6 +71,7 @@ interface AssessmentResult {
   has_full_text: boolean;
   quick_take: string;
   mainstream_frame: string;
+  deep_analysis: string;
   real_story: string;
   left_spin: string;
   right_spin: string;
@@ -281,8 +283,7 @@ function extractGoogleNewsPublisher(rawContent: string | undefined): string | nu
   return pub;
 }
 
-async function fetchFeed(url: string, sourceName: string): Promise<FeedItem[]> {
-  const feed = await rssParser.parseURL(url);
+function mapFeedItems(feed: { items?: Parser.Item[] }, sourceName: string): FeedItem[] {
   return (feed.items || []).map((item) => {
     const publisher = extractGoogleNewsPublisher(item.content);
     let title = item.title || '';
@@ -299,6 +300,58 @@ async function fetchFeed(url: string, sourceName: string): Promise<FeedItem[]> {
       source: publisher || sourceName,
     };
   });
+}
+
+async function fetchFeed(url: string, sourceName: string): Promise<FeedItem[]> {
+  const feed = await rssParser.parseURL(url);
+  return mapFeedItems(feed, sourceName);
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+// Reddit throttles unauthenticated .rss access hard: as of 2026-06 it's roughly
+// 1 request per ~30s window per IP+User-Agent, signalled via x-ratelimit-*
+// headers (no Retry-After). We give it a unique, descriptive UA (per Reddit's
+// guidance), fetch the feeds sequentially (see fetchAllFeeds), and pace off the
+// reset header. rss-parser hides response headers, so we fetch the XML
+// ourselves and hand the body to parseString.
+const REDDIT_UA = 'web:newsreal.ai:v1 (by /u/Liam Ondnes)';
+const REDDIT_DEFAULT_RESET_S = 30; // fallback window when the header is absent
+
+// Returns the parsed items plus how long the caller should wait before the next
+// Reddit request (0 if the window still has budget).
+async function fetchRedditFeed(
+  url: string,
+  sourceName: string,
+  maxRetries = 4,
+): Promise<{ items: FeedItem[]; nextWaitMs: number }> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': REDDIT_UA },
+      signal: AbortSignal.timeout(10000),
+    });
+    const reset = Number(res.headers.get('x-ratelimit-reset'));
+    const remaining = Number(res.headers.get('x-ratelimit-remaining'));
+
+    if (res.status === 429) {
+      if (attempt >= maxRetries) throw new Error('Status code 429');
+      const waitS = Number.isFinite(reset) && reset > 0
+        ? reset
+        : Math.min(REDDIT_DEFAULT_RESET_S * 2 ** attempt, 120);
+      const delay = waitS * 1000 + Math.floor(Math.random() * 1000);
+      console.warn(`Reddit 429 [${sourceName}], window exhausted; retry ${attempt + 1}/${maxRetries} in ${Math.round(delay / 1000)}s`);
+      await sleep(delay);
+      continue;
+    }
+    if (!res.ok) throw new Error(`Status code ${res.status}`);
+
+    const feed = await rssParser.parseString(await res.text());
+    const exhausted = Number.isFinite(remaining) && remaining < 1;
+    const nextWaitMs = exhausted
+      ? (Number.isFinite(reset) && reset > 0 ? reset : REDDIT_DEFAULT_RESET_S) * 1000
+      : 0;
+    return { items: mapFeedItems(feed, sourceName), nextWaitMs };
+  }
 }
 
 const GNEWS_SEARCH = 'https://news.google.com/rss/search?hl=en-US&gl=US&ceid=US:en&q=';
@@ -402,30 +455,51 @@ const ALL_FEEDS: { url: string; name: string; hintCategory?: Category }[] = [
   { url: 'https://fee.org/rss', name: 'FEE' },
 ];
 
+const isRedditFeed = (url: string) => url.includes('reddit.com');
+
 export async function fetchAllFeeds(): Promise<{ items: FeedItem[]; sourceErrors: number; errorDetails: string[] }> {
-  const rssPromises = ALL_FEEDS.map(async (f) => {
-    const items = await fetchFeed(f.url, f.name);
-    if (f.hintCategory) {
-      return { name: f.name, items: items.map((item) => ({ ...item, hintCategory: f.hintCategory })) };
-    }
-    return { name: f.name, items };
-  });
-  const results = await Promise.allSettled(rssPromises);
   const items: FeedItem[] = [];
   let sourceErrors = 0;
   const errorDetails: string[] = [];
-  for (let i = 0; i < results.length; i++) {
-    const result = results[i];
-    if (result.status === 'fulfilled') {
-      items.push(...result.value.items);
-    } else {
-      sourceErrors++;
-      const feedName = ALL_FEEDS[i].name;
-      const reason = result.reason instanceof Error ? result.reason.message : String(result.reason);
-      errorDetails.push(`${feedName}: ${reason}`);
-      console.error(`Feed fetch failed [${feedName}]:`, reason);
+
+  const pushOk = (hint: Category | undefined, fetched: FeedItem[]) => {
+    items.push(...(hint ? fetched.map((item) => ({ ...item, hintCategory: hint })) : fetched));
+  };
+  const pushErr = (feedName: string, reason: unknown) => {
+    sourceErrors++;
+    const msg = reason instanceof Error ? reason.message : String(reason);
+    errorDetails.push(`${feedName}: ${msg}`);
+    console.error(`Feed fetch failed [${feedName}]:`, msg);
+  };
+
+  const redditFeeds = ALL_FEEDS.filter((f) => isRedditFeed(f.url));
+  const otherFeeds = ALL_FEEDS.filter((f) => !isRedditFeed(f.url));
+
+  // Non-Reddit feeds: fetch all at once (unchanged behavior).
+  const otherResults = await Promise.allSettled(otherFeeds.map((f) => fetchFeed(f.url, f.name)));
+  otherResults.forEach((result, i) => {
+    const f = otherFeeds[i];
+    if (result.status === 'fulfilled') pushOk(f.hintCategory, result.value);
+    else pushErr(f.name, result.reason);
+  });
+
+  // Reddit feeds: fetch sequentially, pacing off the rate-limit reset header so
+  // we never burst the same IP+UA. fetchRedditFeed handles per-feed 429 backoff.
+  for (let i = 0; i < redditFeeds.length; i++) {
+    const f = redditFeeds[i];
+    const isLast = i === redditFeeds.length - 1;
+    try {
+      const { items: fetched, nextWaitMs } = await fetchRedditFeed(f.url, f.name);
+      pushOk(f.hintCategory, fetched);
+      if (!isLast && nextWaitMs > 0) await sleep(nextWaitMs + Math.floor(Math.random() * 1000));
+    } catch (err) {
+      pushErr(f.name, err);
+      // Window state is unknown after a failure — wait a full reset before the
+      // next feed rather than hammering into another 429.
+      if (!isLast) await sleep(REDDIT_DEFAULT_RESET_S * 1000);
     }
   }
+
   return { items, sourceErrors, errorDetails };
 }
 
@@ -1010,6 +1084,7 @@ GENERATE THE FOLLOWING (respond in JSON):
   "has_full_text": ${hasFullText},
   "quick_take": "<2-3 provocative sentences for the card view. Must include at least one specific claim about timing, money, or connections. EXACTLY ONCE in the sentence, wrap the most provocative specific claim — a name, a dollar amount, a connection — in [REDACTED:...] syntax so it renders as a click-to-reveal blackbar. EXAMPLE: '...sparked outrage over [REDACTED:$400k in AIPAC lobbying tied to Massie's primary challenger]'. DO NOT literally write the phrase 'hidden detail' — substitute the real spicy claim between the colon and the closing bracket.>",
   "mainstream_frame": "<How is mainstream/establishment media framing this story? What language and emotional hooks are they using?>",
+  "deep_analysis": "<A direct, grounded analysis of the ACTUAL story: what happened, the essential facts, the context the headline leaves out, and why it genuinely matters. This is the substantive deep-dive that explains the story clearly and intelligently. Do NOT do follow-the-money speculation here — that belongs in real_story. Sharp and concrete, not a dry wire-service summary, but stick to what is actually known.>",
   "real_story": "<Your most provocative speculative analysis. What's ACTUALLY driving this story? Follow the money. Look at timing. Who met with whom? What contracts were signed? What regulations were filed? Be specific with numbers and connections even if speculative.>",
   "left_spin": "<How do left-leaning outlets cover this AND what are they conveniently ignoring? Be equally critical.>",
   "right_spin": "<How do right-leaning outlets cover this AND what are they conveniently ignoring? Be equally critical.>",
@@ -1308,7 +1383,8 @@ function feedItemToStory(item: FeedItem, assessment: AssessmentResult, index: nu
     manipulationScore: assessment.manipulation_index,
     manipulationBreakdown: assessment.manipulation_breakdown,
     hasFullText: assessment.has_full_text,
-    realAnalysis: coerceToString(assessment.real_story),
+    // Fall back to real_story for legacy/cached entries that predate deep_analysis.
+    realAnalysis: coerceToString(assessment.deep_analysis) || coerceToString(assessment.real_story),
     deepDive: {
       mainstream: coerceToString(assessment.mainstream_frame),
       realStory: coerceToString(assessment.real_story),

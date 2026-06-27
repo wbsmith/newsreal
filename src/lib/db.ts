@@ -115,33 +115,54 @@ export async function batchGetStories(slugs: string[]): Promise<Record<string, u
   return results;
 }
 
+const SEARCHABLE_CATEGORIES = ['politics', 'tech', 'finance', 'world', 'science', 'deep-state'];
+
+// How deep (by recency) to look per category. The old implementation did a blind
+// table scan in DynamoDB hash order and stopped after 500 *matches*; on a 40k+
+// table where common terms ("trump") match thousands of rows, it bailed after
+// scanning a few thousand items and silently dropped the rest — so any specific
+// or just-published story usually never appeared. Querying the
+// category-publishedAt GSI recent-first guarantees newly published stories (top
+// of their category index) surface, and search returns the most recent matches.
+const MAX_PER_CATEGORY = 1500;
+
 export async function searchStories(query: string, limit = 20): Promise<Record<string, unknown>[]> {
   const db = getDynamoDB();
   if (!db) return [];
 
   const q = query.toLowerCase();
-  const allItems: Record<string, unknown>[] = [];
-  let lastKey: Record<string, unknown> | undefined;
 
-  // Paginated scan — pull up to 500 items, filter in JS for case-insensitive match
-  do {
-    const result = await db.send(
-      new ScanCommand({
-        TableName: TABLES.stories,
-        Limit: 200,
-        ExclusiveStartKey: lastKey,
-      })
-    );
-    const items = result.Items ?? [];
-    for (const item of items) {
-      const headline = (item.headline as string || '').toLowerCase();
-      const summary = (item.summary as string || '').toLowerCase();
-      if (headline.includes(q) || summary.includes(q)) {
-        allItems.push(item);
-      }
-    }
-    lastKey = result.LastEvaluatedKey;
-  } while (lastKey && allItems.length < 500);
+  const perCategory = await Promise.all(
+    SEARCHABLE_CATEGORIES.map(async (category) => {
+      const matches: Record<string, unknown>[] = [];
+      let lastKey: Record<string, unknown> | undefined;
+      let scanned = 0;
+      do {
+        const result = await db.send(
+          new QueryCommand({
+            TableName: TABLES.stories,
+            IndexName: 'category-publishedAt-index',
+            KeyConditionExpression: 'category = :cat',
+            ExpressionAttributeValues: { ':cat': category },
+            ScanIndexForward: false, // most recent first
+            Limit: 200,
+            ExclusiveStartKey: lastKey,
+          })
+        );
+        const items = result.Items ?? [];
+        scanned += items.length;
+        for (const item of items) {
+          const headline = (item.headline as string || '').toLowerCase();
+          const summary = (item.summary as string || '').toLowerCase();
+          if (headline.includes(q) || summary.includes(q)) matches.push(item);
+        }
+        lastKey = result.LastEvaluatedKey as Record<string, unknown> | undefined;
+      } while (lastKey && scanned < MAX_PER_CATEGORY);
+      return matches;
+    })
+  );
+
+  const allItems = perCategory.flat();
 
   // Sort by publishedAt descending, cap at limit
   allItems.sort((a, b) => {

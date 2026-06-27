@@ -13,6 +13,7 @@ import NarrativeTracker from '@/components/NarrativeTracker';
 import ObfuscationIndex from '@/components/ObfuscationIndex';
 import SuppressedSearches from '@/components/SuppressedSearches';
 import AnalyzeArticleModal from '@/components/AnalyzeArticleModal';
+import NarrativeSearchModal from '@/components/NarrativeSearchModal';
 import Footer from '@/components/Footer';
 
 export default function Home() {
@@ -33,6 +34,7 @@ export default function Home() {
 
   // Analyze article modal (this one stays as state — it's a write action, not navigation)
   const [showAnalyzeModal, setShowAnalyzeModal] = useState(false);
+  const [showNarrativeModal, setShowNarrativeModal] = useState(false);
 
   // Vote state
   const [votes, setVotes] = useState<Record<string, { up: number; down: number }>>({});
@@ -173,10 +175,18 @@ export default function Home() {
 
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      return base.filter(s =>
+      const local = base.filter(s =>
         s.headline.toLowerCase().includes(q) ||
         s.summary.toLowerCase().includes(q)
       );
+      // Fully integrate archive/DB matches (incl. user-submitted) with the
+      // loaded-page matches into one recency-sorted list, deduped by slug.
+      const seen = new Set(local.map(s => s.slug));
+      const merged = [...local, ...archiveResults.filter(s => !seen.has(s.slug))];
+      merged.sort((a, b) =>
+        new Date(b.publishedAt || 0).getTime() - new Date(a.publishedAt || 0).getTime()
+      );
+      return merged;
     }
 
     const hasVotes = base.some(s => votes[s.slug]);
@@ -190,7 +200,7 @@ export default function Home() {
       if (netA !== netB) return netB - netA;
       return 0; // preserve pipeline order as tiebreaker
     });
-  }, [activeFilter, stories, bonusStories, searchQuery, votes]);
+  }, [activeFilter, stories, bonusStories, searchQuery, votes, archiveResults]);
 
   if (loading) {
     return (
@@ -226,6 +236,7 @@ export default function Home() {
         onSearch={handleSearch}
         onSearchClear={handleSearchClear}
         onAnalyzeClick={() => setShowAnalyzeModal(true)}
+        onNarrativeClick={() => setShowNarrativeModal(true)}
       />
       <DisclaimerBanner />
       <main className="main-content">
@@ -237,7 +248,11 @@ export default function Home() {
             <div className="stories-section-header">
               <h2>{searchQuery ? `Search: "${searchQuery}"` : 'Today’s Narrative Landscape'}</h2>
               <div className="line" />
-              <div className="count">{filteredStories.length} STORIES {searchQuery ? 'FOUND' : 'DECODED'}</div>
+              <div className="count">
+                {searchQuery && searchLoading
+                  ? 'SEARCHING ARCHIVE…'
+                  : `${filteredStories.length} STORIES ${searchQuery ? 'FOUND' : 'DECODED'}`}
+              </div>
             </div>
             {filteredStories.length === 0 ? (
               <div className="empty-state">
@@ -246,7 +261,7 @@ export default function Home() {
                 </div>
                 <div className="empty-state-sub">
                   {searchQuery
-                    ? 'No stories match your search on this page. Check archive results below.'
+                    ? (searchLoading ? 'Searching the archive…' : 'No stories match your search.')
                     : 'Pipeline initializing. Stories will appear after the next ingestion cycle.'}
                 </div>
               </div>
@@ -279,38 +294,17 @@ export default function Home() {
               </div>
             </div>
           )}
-          {searchQuery && (
-            <div className="stories-rest">
-              <div className="stories-section-header">
-                <h2>Archive Results</h2>
-                <div className="line" />
-                <div className="count">
-                  {searchLoading ? 'SCANNING...' : `${archiveResults.length} ARCHIVED`}
-                </div>
-              </div>
-              {searchLoading ? (
-                <div className="empty-state">
-                  <div className="empty-state-message">SCANNING ARCHIVES...</div>
-                </div>
-              ) : archiveResults.length > 0 ? (
-                <div className="stories-grid stories-grid-compact">
-                  {archiveResults.map((story) => (
-                    <StoryCard key={story.slug} story={story} tier="compact" />
-                  ))}
-                </div>
-              ) : (
-                <div className="empty-state">
-                  <div className="empty-state-message">NO ARCHIVED SIGNALS FOUND</div>
-                </div>
-              )}
-            </div>
-          )}
         </div>
       </main>
       <Footer />
       <AnalyzeArticleModal
         open={showAnalyzeModal}
         onClose={() => setShowAnalyzeModal(false)}
+      />
+      <NarrativeSearchModal
+        open={showNarrativeModal}
+        onClose={() => setShowNarrativeModal(false)}
+        initialTerm={searchQuery}
       />
     </>
   );

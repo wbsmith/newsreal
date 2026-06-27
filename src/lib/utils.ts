@@ -19,6 +19,29 @@ export function relativeTime(dateStr: string): string {
   }
 }
 
+// Human age computed live from a timestamp, coarsening for older items. Use this
+// at render time (not a value frozen at index time) so age stays honest, and
+// older stories read as "over a week/month ago" rather than a precise-but-stale
+// timestamp.
+export function displayAge(dateStr: string | undefined, fallback = 'recently'): string {
+  if (!dateStr) return fallback;
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return fallback;
+
+  const sec = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (sec < 60) return 'just now';
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min} minute${min === 1 ? '' : 's'} ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} hour${hr === 1 ? '' : 's'} ago`;
+  const day = Math.floor(hr / 24);
+  if (day === 1) return 'yesterday';
+  if (day < 7) return `${day} days ago`;
+  if (day < 30) return 'over a week ago';
+  if (day < 365) return 'over a month ago';
+  return 'over a year ago';
+}
+
 const BIAS_CLASS_MAP: Record<string, BiasClass> = {
   'LEAN LEFT': 'left',
   'LEAN RIGHT': 'right',

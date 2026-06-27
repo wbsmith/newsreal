@@ -51,7 +51,7 @@ export default function NarrativeAnalysisSections({ analysis }: NarrativeAnalysi
               );
               return (
                 <div key={i} className="search-result-item">
-                  {match ? (
+                  {match && match.slug ? (
                     <a href={`/story/${match.slug}`} className="search-result-source">{outlet}</a>
                   ) : (
                     <span style={{ color: 'var(--text-muted, #888)' }}>{outlet}</span>
@@ -71,9 +71,13 @@ export default function NarrativeAnalysisSections({ analysis }: NarrativeAnalysi
           <div className="search-results-list">
             {analysis.relatedStories.map((story, i) => (
               <div key={i} className="search-result-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
-                <a href={`/story/${story.slug}`}>
-                  {story.headline}
-                </a>
+                {story.slug ? (
+                  <a href={`/story/${story.slug}`}>{story.headline}</a>
+                ) : story.sourceUrl ? (
+                  <a href={story.sourceUrl} target="_blank" rel="noopener noreferrer">{story.headline}</a>
+                ) : (
+                  <span>{story.headline}</span>
+                )}
                 {story.sourceUrl && (
                   <a
                     href={story.sourceUrl}

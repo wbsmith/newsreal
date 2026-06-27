@@ -47,6 +47,7 @@ export interface Story {
   source: string;
   sourceUrl: string;
   time: string;
+  publishedAt?: string;
   headline: string;
   summary: string;
   biasTag: StoryBiasTag;

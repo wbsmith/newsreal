@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { Story } from '@/types';
+import { displayAge } from '@/lib/utils';
 import BiasTag from './BiasTag';
 import ManipulationMeter from './ManipulationMeter';
 
@@ -33,7 +34,7 @@ export default function StoryCard({ story, tier = 'featured', votes, userVote, o
         <div>
           <div className="story-meta">
             <span className="story-source">{story.source}</span>
-            <span className="story-time">{story.time}</span>
+            <span className="story-time">{displayAge(story.publishedAt, story.time)}</span>
             <BiasTag tag={story.biasTag} />
             {story.sourceNetwork && story.sourceNetwork.outletCount > 1 && (
               <span className="source-network-badge">

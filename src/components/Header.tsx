@@ -11,9 +11,10 @@ interface HeaderProps {
   onSearch?: (query: string) => void;
   onSearchClear?: () => void;
   onAnalyzeClick?: () => void;
+  onNarrativeClick?: () => void;
 }
 
-export default function Header({ activeFilter, onFilterChange, onSearch, onSearchClear, onAnalyzeClick }: HeaderProps) {
+export default function Header({ activeFilter, onFilterChange, onSearch, onSearchClear, onAnalyzeClick, onNarrativeClick }: HeaderProps) {
   const [dateline, setDateline] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchValue, setSearchValue] = useState('');
@@ -83,6 +84,11 @@ export default function Header({ activeFilter, onFilterChange, onSearch, onSearc
           {onAnalyzeClick && (
             <button className="header-analyze-btn" onClick={onAnalyzeClick}>
               ANALYZE
+            </button>
+          )}
+          {onNarrativeClick && (
+            <button className="header-analyze-btn" onClick={onNarrativeClick}>
+              NARRATIVE
             </button>
           )}
           <div className="live-indicator">

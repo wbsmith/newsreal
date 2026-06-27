@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getCached } from '@/lib/cache';
-import { batchGetStories, getRecentStories } from '@/lib/db';
+import { batchGetStories, getRecentStories, getStoriesByCategory } from '@/lib/db';
 import { Story, Narrative, Obfuscation, TickerItem, NarrativeAnalysis, SuppressedSearchEntry } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -69,6 +69,20 @@ export async function GET(request: Request) {
   // Apply category filter
   if (category && category !== 'all') {
     stories = stories.filter((s) => s.category === category);
+
+    // The manifest only contains pipeline-curated stories, so on-demand
+    // user-submitted analyses never appear in their category. Merge them in
+    // from the DB (GSI, recent-first), deduped against what's already shown.
+    try {
+      const dbCat = (await getStoriesByCategory(category, 40)) as unknown as Story[];
+      const seen = new Set(stories.map((s) => s.slug));
+      const extra = dbCat.filter(
+        (s) => s && s.slug && (s as { userSubmitted?: boolean }).userSubmitted && !seen.has(s.slug)
+      );
+      if (extra.length > 0) stories = [...stories, ...extra];
+    } catch {
+      // GSI query failed — continue with manifest stories only
+    }
   }
 
   // Fetch bonus stories for finance/science category requests

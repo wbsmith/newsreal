@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { setCached } from '@/lib/cache';
+import { getCached, setCached } from '@/lib/cache';
 import { putNarrative } from '@/lib/db';
 import { stripHtml } from '@/lib/analysis/narrative-cluster';
 import { NarrativeAnalysis } from '@/types';
@@ -9,16 +9,28 @@ export const dynamic = 'force-dynamic';
 const PUBLISH_TTL = 60 * 60 * 24 * 30; // 30 days
 
 export async function POST(request: Request) {
-  let body: { narrative?: NarrativeAnalysis };
+  let body: { slug?: string; narrative?: NarrativeAnalysis };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
   }
 
-  const narrative = body.narrative;
+  // Publish by slug: the full narrative was stashed server-side at generate time,
+  // so the request body stays tiny (the full object exceeds the WAF's 8KB body
+  // limit). Fall back to an inline narrative for robustness.
+  const slug = body.slug || body.narrative?.slug;
+  if (!slug) {
+    return NextResponse.json({ error: 'Missing slug' }, { status: 400 });
+  }
+
+  const narrative =
+    (await getCached<NarrativeAnalysis>(`narrative-draft:${slug}`)) || body.narrative || null;
   if (!narrative || !narrative.slug || !narrative.narrativeText) {
-    return NextResponse.json({ error: 'Missing narrative data' }, { status: 400 });
+    return NextResponse.json(
+      { error: 'Draft not found or expired — rebuild the narrative and publish again.' },
+      { status: 404 }
+    );
   }
 
   // Sanitize before storing — narrativeText renders via dangerouslySetInnerHTML,

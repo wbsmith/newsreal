@@ -82,7 +82,9 @@ export default function NarrativeSearchModal({ open, onClose, initialTerm = '' }
       const res = await fetch('/api/narrative-search/publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ narrative: result }),
+        // Publish by slug — the full narrative was stashed server-side at
+        // generate time, keeping this request under the WAF's 8KB body limit.
+        body: JSON.stringify({ slug: result.slug }),
       });
       if (!res.ok) {
         const data = await res.json();

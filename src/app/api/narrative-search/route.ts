@@ -158,6 +158,11 @@ export async function POST(request: Request) {
       relatedStories,
     };
 
+    // Stash the full narrative server-side so Publish can promote it by slug.
+    // The publish POST then carries only the slug, staying under the CloudFront
+    // WAF's 8KB request-body limit — the ~10 related-article URLs alone push the
+    // full object (~8.6KB) over it.
+    await setCached(`narrative-draft:${narrative.slug}`, narrative, 3600);
     await setCached(rlKey, (count ?? 0) + 1, RATE_LIMIT_TTL);
 
     return NextResponse.json({ narrative, articleCount: articles.length, phrases });

@@ -4,6 +4,14 @@
 // headline and (b) the multi-word phrases that recur across headlines, which is
 // the concrete "identical terms repeated across outlets" coordination signal.
 
+// Strip HTML tags from model output. The on-demand narrative is plain text (the
+// prompt asks for sentences, not markup), but narrativeText is rendered via
+// dangerouslySetInnerHTML downstream — so any stray tags would be a stored-XSS
+// vector, and also trip the CloudFront WAF's XSS rule on the publish POST (403).
+export function stripHtml(s: string): string {
+  return (s || '').replace(/<[^>]*>/g, '').trim();
+}
+
 // Google News encodes the publisher as a " - Publisher" suffix on the title.
 export function splitGoogleNewsTitle(rawTitle: string): { title: string; outlet: string | null } {
   const idx = rawTitle.lastIndexOf(' - ');

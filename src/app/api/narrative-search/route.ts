@@ -5,7 +5,7 @@ import { fetchFeed } from '@/lib/ingestion/rss-parser';
 import { analyze } from '@/lib/llm';
 import { getCached, setCached } from '@/lib/cache';
 import { slugify, parseClaudeJSON } from '@/lib/utils';
-import { splitGoogleNewsTitle, repeatedPhrases } from '@/lib/analysis/narrative-cluster';
+import { splitGoogleNewsTitle, repeatedPhrases, stripHtml } from '@/lib/analysis/narrative-cluster';
 import { NarrativeAnalysis, SourceArticle } from '@/types';
 
 export const dynamic = 'force-dynamic';
@@ -136,22 +136,25 @@ export async function POST(request: Request) {
 
     const relatedStories: SourceArticle[] = articles.slice(0, 10).map((a) => ({
       slug: '', // external article, not an internal story
-      headline: a.title,
+      headline: stripHtml(a.title),
       sourceUrl: a.link,
       source: a.outlet ?? undefined,
     }));
 
     const coherence = Math.max(0, Math.min(100, Math.round(parsed.coherence_score ?? 0)));
+    // Strip HTML from all model-generated text — it's plain prose, and stray tags
+    // would be a stored-XSS vector (narrativeText renders via
+    // dangerouslySetInnerHTML) and trip the WAF on publish.
     const narrative: NarrativeAnalysis = {
       slug: slugify(term) || 'narrative',
-      narrativeText: parsed.narrative_text,
+      narrativeText: stripHtml(parsed.narrative_text),
       coherenceScore: coherence,
-      outletsInvolved: outlets,
+      outletsInvolved: outlets.map(stripHtml),
       analysisDate: new Date().toISOString(),
-      narrativeOrigin: parsed.narrative_origin ?? '',
-      coordinationEvidence: parsed.coordination_evidence || evidence,
-      whoBenefits: parsed.who_benefits ?? '',
-      suppressedAlternative: parsed.suppressed_alternative ?? '',
+      narrativeOrigin: stripHtml(parsed.narrative_origin ?? ''),
+      coordinationEvidence: stripHtml(parsed.coordination_evidence || evidence),
+      whoBenefits: stripHtml(parsed.who_benefits ?? ''),
+      suppressedAlternative: stripHtml(parsed.suppressed_alternative ?? ''),
       relatedStories,
     };
 

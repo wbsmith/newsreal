@@ -88,7 +88,7 @@ export default function Header({ activeFilter, onFilterChange, onSearch, onSearc
           )}
           {onNarrativeClick && (
             <button className="header-analyze-btn" onClick={onNarrativeClick}>
-              NARRATIVE
+              DECODE
             </button>
           )}
           <div className="live-indicator">

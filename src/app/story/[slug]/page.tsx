@@ -1,6 +1,7 @@
 import { notFound } from 'next/navigation';
 import { getStory } from '@/lib/db';
 import { Story } from '@/types';
+import { stripRedaction } from '@/lib/utils';
 import StoryDetailClient from './StoryDetailClient';
 
 export const revalidate = 3600;
@@ -38,13 +39,15 @@ export async function generateMetadata({ params }: StoryPageProps) {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.newsreal.ai';
   const canonicalUrl = `${siteUrl}/story/${slug}`;
   const ogImageUrl = buildOgImageUrl(story);
+  // summary may carry [REDACTED:…] markup; unwrap it for plain-text meta tags.
+  const description = stripRedaction(story.summary);
 
   return {
     title: `${story.headline} — NewsReal.ai`,
-    description: story.summary,
+    description,
     openGraph: {
       title: story.headline,
-      description: story.summary,
+      description,
       url: canonicalUrl,
       siteName: 'NewsReal.ai',
       type: 'article',
@@ -60,7 +63,7 @@ export async function generateMetadata({ params }: StoryPageProps) {
     twitter: {
       card: 'summary_large_image',
       title: story.headline,
-      description: story.summary,
+      description,
       images: [ogImageUrl],
     },
     alternates: {

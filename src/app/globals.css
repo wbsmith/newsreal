@@ -286,7 +286,10 @@ a { color: inherit; text-decoration: none; }
 
 @keyframes tickerScroll {
   0% { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
+  /* Shift by an explicit pixel width (one content set) set from JS. Falls back
+     to -50% before measurement. Using px (not %) keeps speed correct on mobile,
+     where the flex container is viewport-constrained and % would under-move. */
+  100% { transform: translateX(calc(-1 * var(--ticker-shift, 50%))); }
 }
 
 .ticker-item {

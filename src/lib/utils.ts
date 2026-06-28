@@ -19,6 +19,13 @@ export function relativeTime(dateStr: string): string {
   }
 }
 
+// Unwrap [REDACTED:revealed text] markup to plain text for non-interactive
+// contexts (meta descriptions, OG tags) where the click-to-reveal blackbar can't
+// render. UI components use RedactedText instead to render the blackbar.
+export function stripRedaction(text: string | undefined): string {
+  return (text || '').replace(/\[REDACTED:(.*?)\]/g, '$1');
+}
+
 // Human age computed live from a timestamp, coarsening for older items. Use this
 // at render time (not a value frozen at index time) so age stays honest, and
 // older stories read as "over a week/month ago" rather than a precise-but-stale

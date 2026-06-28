@@ -7,6 +7,7 @@ import BiasTag from '@/components/BiasTag';
 import ManipulationMeter from '@/components/ManipulationMeter';
 import ShareButton from '@/components/ShareButtons';
 import StoryAnalysisSections from '@/components/StoryAnalysisSections';
+import RedactedText from '@/components/RedactedText';
 import Footer from '@/components/Footer';
 
 interface StoryDetailClientProps {
@@ -33,7 +34,7 @@ export default function StoryDetailClient({ story }: StoryDetailClientProps) {
             {story.headline}
           </h1>
           <p className="story-summary" style={{ fontSize: '17px', marginTop: '8px' }}>
-            {story.summary}
+            <RedactedText text={story.summary} />
           </p>
 
           <ManipulationMeter score={story.manipulationScore} />

@@ -1,7 +1,7 @@
 'use client';
 
 import { TickerItem } from '@/types';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 
 interface TickerProps {
   items: TickerItem[];
@@ -16,7 +16,9 @@ const TICKER_SPEED_PX_PER_SEC = 90;
 
 export default function Ticker({ items, onItemClick }: TickerProps) {
   const contentRef = useRef<HTMLDivElement>(null);
-  const [duration, setDuration] = useState(30);
+  // Width of one content set, in px. The animation shifts by exactly this much
+  // and the duration is derived from it for a constant px/sec speed.
+  const [setWidth, setSetWidth] = useState(0);
 
   // Double items for infinite scroll illusion
   const doubled = [...items, ...items];
@@ -24,19 +26,25 @@ export default function Ticker({ items, onItemClick }: TickerProps) {
   useEffect(() => {
     const el = contentRef.current;
     if (!el) return;
-    // The animation translates by one full set (-50% of the doubled content).
-    const setWidth = el.scrollWidth / 2;
-    if (setWidth > 0) setDuration(setWidth / TICKER_SPEED_PX_PER_SEC);
+    const w = el.scrollWidth / 2; // doubled content → one set is half
+    if (w > 0) setSetWidth(w);
   }, [items]);
 
   if (items.length === 0) return null;
+
+  const style: CSSProperties | undefined = setWidth > 0
+    ? ({
+        animationDuration: `${setWidth / TICKER_SPEED_PX_PER_SEC}s`,
+        '--ticker-shift': `${setWidth}px`,
+      } as CSSProperties)
+    : undefined;
 
   return (
     <div className="ticker-bar">
       <div
         className="ticker-content"
         ref={contentRef}
-        style={{ animationDuration: `${duration}s` }}
+        style={style}
       >
         {doubled.map((item, i) => (
           <span key={i}>

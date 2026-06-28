@@ -1378,7 +1378,10 @@ function feedItemToStory(item: FeedItem, assessment: AssessmentResult, index: nu
     id: index + 1, slug: slugify(item.title), category: assessment.category,
     featured: false, source: item.source.toUpperCase(), sourceUrl: item.link,
     time: relativeTime(item.pubDate), headline: item.title,
-    summary: coerceToString(assessment.mainstream_frame).slice(0, 500),
+    // Teaser = quick_take (the provocative card hook, may carry [REDACTED]).
+    // Was mainstream_frame, which duplicated the dossier's "Mainstream Frame"
+    // section in the detail view. Fall back to mainstream_frame if absent.
+    summary: (coerceToString(assessment.quick_take) || coerceToString(assessment.mainstream_frame)).slice(0, 500),
     biasTag: mapBiasTag(assessment.bias_tag || 'CENTER-ESTABLISHMENT'),
     manipulationScore: assessment.manipulation_index,
     manipulationBreakdown: assessment.manipulation_breakdown,

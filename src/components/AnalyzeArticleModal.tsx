@@ -6,6 +6,7 @@ import BiasTag from './BiasTag';
 import ManipulationMeter from './ManipulationMeter';
 import AnalysisModal from './AnalysisModal';
 import StoryAnalysisSections from './StoryAnalysisSections';
+import RedactedText from './RedactedText';
 
 interface AnalyzeArticleModalProps {
   open: boolean;
@@ -212,7 +213,7 @@ export default function AnalyzeArticleModal({ open, onClose }: AnalyzeArticleMod
       </div>
       <h2 className="story-headline">{story.headline}</h2>
       <p className="story-summary" style={{ fontSize: '17px', marginTop: '8px' }}>
-        {story.summary}
+        <RedactedText text={story.summary} />
       </p>
       <ManipulationMeter score={story.manipulationScore} />
     </>

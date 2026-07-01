@@ -2,10 +2,9 @@
 
 import Link from 'next/link';
 import { Story } from '@/types';
-import { displayAge } from '@/lib/utils';
+import { displayAge, stripRedaction } from '@/lib/utils';
 import BiasTag from './BiasTag';
 import ManipulationMeter from './ManipulationMeter';
-import RedactedText from './RedactedText';
 
 interface StoryCardProps {
   story: Story;
@@ -44,7 +43,7 @@ export default function StoryCard({ story, tier = 'featured', votes, userVote, o
             )}
           </div>
           <h3 className="story-headline">{story.headline}</h3>
-          {story.summary && <p className="story-summary"><RedactedText text={story.summary} /></p>}
+          {story.summary && <p className="story-summary">{stripRedaction(story.summary)}</p>}
           {tier !== 'compact' && (
             <ManipulationMeter score={story.manipulationScore} />
           )}

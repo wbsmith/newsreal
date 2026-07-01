@@ -6,7 +6,7 @@ import BiasTag from './BiasTag';
 import ManipulationMeter from './ManipulationMeter';
 import AnalysisModal from './AnalysisModal';
 import StoryAnalysisSections from './StoryAnalysisSections';
-import RedactedText from './RedactedText';
+import { stripRedaction } from '@/lib/utils';
 
 interface Props {
   story: Story;
@@ -30,7 +30,7 @@ export default function StoryRouteModal({ story }: Props) {
         <BiasTag tag={story.biasTag} />
       </div>
       <h2 className="story-headline">{story.headline}</h2>
-      <p className="story-summary" style={{ fontSize: '17px', marginTop: '8px' }}><RedactedText text={story.summary} /></p>
+      <p className="story-summary" style={{ fontSize: '17px', marginTop: '8px' }}>{stripRedaction(story.summary)}</p>
       <ManipulationMeter score={story.manipulationScore} />
     </>
   );
